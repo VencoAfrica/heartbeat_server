@@ -2,7 +2,7 @@
 	"name": "echo server",
 	"tcp":
 	{
-		"port": 8901,
+		"port": 18901,
 		"secure": false,
 		"ca_file": "",
 		"cert": "",
@@ -11,7 +11,7 @@
 	},
 	"udp":
 	{
-		"port": 8902,
+		"port": 18902,
 		"secure": false,
 		"ca_file": "",
 		"cert": "",
