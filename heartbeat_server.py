@@ -49,13 +49,15 @@ def _parse_heartbeat(in_data):
 		address = in_data[17+device_details_length_int+1:17+device_details_length_int+5]
 	
 		#create out_data remember to transports the target_address and source_address
-		out_data = version_number+target_address+source_address+frame_length+fixed_format
+		out_fixed_format = fixed_format
+		out_fixed_format_length = len(fixed_format).to_bytes(2, 'big')
+		out_data = version_number+target_address+source_address+out_fixed_format_length+out_fixed_format
 		
 		print('version_number: ', bytearray(version_number).hex())
 		print('source_address: ', bytearray(target_address).hex())
 		print('target_address: ', bytearray(source_address).hex())
-		print('frame_length: ', bytearray(frame_length).hex())
-		print('fixed_format: ', bytearray(fixed_format).hex())
+		print('frame_length: ', bytearray(out_fixed_format_length).hex())
+		print('fixed_format: ', bytearray(out_fixed_format).hex())
 		
 		print('heartbeat response: ', bytearray(out_data).hex())
 	except IndexError as err:
