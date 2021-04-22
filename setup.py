@@ -2,7 +2,8 @@
 from setuptools import setup, find_packages
 
 __version__ = "0.0.1"
-install_requires = []
+
+install_requires = ["redis==2.10.6"]
 
 setup(
 	name="heartbeat_server",

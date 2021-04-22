@@ -9,19 +9,23 @@ class HeartbeartData:
 
     @property
     def source_address(self):
-		return self._data[2:4]
+        return self._data[2:4]
 
     @property
     def target_address(self):
-		return self._data[4:6]
+        return self._data[4:6]
 
-	@property
+    @property
     def frame_length(self):
         return self._data[6:8]
 
     @property
     def fixed_format(self):
         return self._data[8:13]
+
+    @property
+    def fixed_format_length(self):
+        return len(self.fixed_format).to_bytes(2, 'big')
 
     @property
     def structure(self):
@@ -55,9 +59,9 @@ class HeartbeartData:
 
     @property
     def output_data(self):
-		''' create out_data remember to transports the target_address and source_address '''
-		return  self.version_number + 
+        ''' create out_data remember to transports the target_address and source_address '''
+        return (self.version_number + 
                 self.target_address + 
                 self.source_address + 
-                len(self.fixed_format).to_bytes(2, 'big') + 
-                self.fixed_format
+                self.fixed_format_length + 
+                self.fixed_format)
