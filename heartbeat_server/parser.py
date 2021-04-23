@@ -65,3 +65,15 @@ class HeartbeartData:
                 self.source_address + 
                 self.fixed_format_length + 
                 self.fixed_format)
+    
+    def get_parsed(self):
+        ''' parse data to be put in queue. Can raise exception '''
+        return {
+            "version_number": self.version_number.hex(),
+            "source_address": self.source_address.hex(),
+            "target_address": self.target_address.hex(),
+            "frame_length": self.fixed_format_length.hex(),
+            "fixed_format": self.fixed_format.hex(),
+            "device_ip": self.address.decode(),
+            "device_details": self.device_details.decode(),
+        }

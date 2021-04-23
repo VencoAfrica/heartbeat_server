@@ -31,40 +31,20 @@ async def get_redis(deps):
     return await redis_pool(url, deps)
 
 async def push_to_queue(queue_id, message, deps):
-    redis = await get_redis(deps)
-    await redis.lpush(queue_id, message)
-
-
-async def _parse_heartbeat(in_data, deps):
-    logger = deps['logger']
+    logger = deps.get('logger')
+    redis = None
     try:
-        parsed = HeartbeartData(in_data)
+        redis = await get_redis(deps)
+    except:
+        if logger:
+            logger.exception("Error getting redis connection")
 
-        msg = (
-            "version_number: %s\n"
-            "source_address: %s\n"
-            "target_address: %s\n"
-            "frame_length: %s\n"
-            "fixed_format: %s\n"
-        ) % (
-            bytearray(parsed.version_number).hex(),
-            bytearray(parsed.target_address).hex(),
-            bytearray(parsed.source_address).hex(),
-            bytearray(parsed.fixed_format_length).hex(),
-            bytearray(parsed.fixed_format).hex()
-        )
-
-        out_data = parsed.output_data
-        msg += 'heartbeat response: %s' % bytearray(out_data).hex()
-        logger.info(msg)
-
-        # meter = parsed.version_number.decode()
-        await push_to_queue('meter', 'json data', deps)
-    except IndexError:
-        logger.exception("badly formed heartbeat. cannot log or respond!")
-        out_data = b'\xFF'
-        
-    return out_data
+    if redis is not None:
+        try:
+            await redis.lpush(queue_id, message)
+        except:
+            if logger:
+                logger.exception("Error pushing message to queue")
 
 async def server_handler(reader, writer, deps):
     logger = deps['logger']
@@ -76,10 +56,18 @@ async def server_handler(reader, writer, deps):
             break
 
     logger.info("Received %s", data)
+    to_push = None
+    try:
+        parsed = HeartbeartData(data)
+        to_push = parsed.get_parsed()
+    except:
+        logger.exception("badly formed heartbeat. cannot log or respond!")
 
-    out_data = await _parse_heartbeat(data, deps)
-
-    logger.info("Parsed %s", out_data)
+    if to_push:
+        device_details = to_push['device_details']
+        to_push = json.dumps(to_push, indent=2)
+        await push_to_queue(device_details, to_push, deps)
+        logger.info("Parsed: %s", to_push)
 
     writer.close()
 
