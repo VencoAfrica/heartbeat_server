@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import getpass
+import json
 import os
 import sys
 
@@ -13,9 +14,15 @@ user={user}
 autostart=true
 autorestart=true
 directory={location}
-stdout_logfile={log_location}
 stderr_logfile={log_location}
 """
+
+config_content = {
+	"name": "echo server",
+	"tcp": {"port": 18901,},
+	"udp": {"port": 18902,},
+	"redis_server_url": ""
+}
 
 
 def get_supervisor_confdir():
@@ -24,6 +31,7 @@ def get_supervisor_confdir():
     for possiblity in possiblities:
         if os.path.exists(possiblity):
             return possiblity
+    raise Exception("Supervisor installation not found")
 
 def setup_supervisor():
     ''' create supervisor config '''
@@ -49,6 +57,14 @@ def setup_supervisor():
         os.symlink(os.path.abspath(config_filename), supervisor_conf)
     return config_filename
 
+def setup_config_json():
+    location = os.path.abspath("config.json")
+    exists = os.path.exists(location)
+    if not exists:
+        with open(location, 'w') as fhandle:
+            json.dump(config_content, fhandle, indent=2)
+    return location, exists
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Heartbeat Server")
@@ -58,7 +74,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.setup:
         ouput = setup_supervisor()
-        print("Supervisor setup in file: %s" % os.path.abspath(ouput))
+        print("Supervisor setup in file: %s\n" % os.path.abspath(ouput))
+        config_location, exists = setup_config_json()
+        if exists:
+            msg = "Using config file: %s\n" % config_location
+        else:
+            msg = ("Config file created at %s. "
+                   "Please edit with appropriate values\n") % config_location
+        print(msg)
     elif args.serve:
         # load config and run server
         config = load_config()

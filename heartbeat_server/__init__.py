@@ -1,6 +1,8 @@
 import asyncio
 import json
+import getpass
 import os
+import sys
 
 import aioredis
 
@@ -80,6 +82,7 @@ async def main(deps=None):
     if deps is None:
         deps = {}
 
+    sys.stderr.write("\ncurrent user: %s\n" % getpass.getuser())
     logger = deps.get('logger')
     if logger is None:
         logger = get_logger()
