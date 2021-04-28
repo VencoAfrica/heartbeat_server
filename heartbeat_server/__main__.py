@@ -24,6 +24,15 @@ config_content = {
 	"redis_server_url": ""
 }
 
+def create_logs_folder():
+    logs_folder = 'logs'
+    if os.path.exists(logs_folder):
+        if not os.path.isdir(logs_folder):
+            raise Exception("A file with name %s already exists. Please run command in different folder" % logs_folder)
+        return False
+    else:
+        os.mkdir(logs_folder)
+        return True
 
 def get_supervisor_confdir():
     ''' copied from frappe '''
@@ -33,7 +42,7 @@ def get_supervisor_confdir():
             return possiblity
     raise Exception("Supervisor installation not found")
 
-def setup_supervisor():
+def setup_supervisor(user=None):
     ''' create supervisor config '''
     py_cmd = sys.executable
     if "/env/bin/" not in py_cmd:
@@ -47,7 +56,7 @@ def setup_supervisor():
         fhandle.write(supervisor_content.format(
             py_cmd=py_cmd,
             location=location,
-            user=getpass.getuser(),
+            user=user or getpass.getuser(),
             log_location=log_location
         ))
 
@@ -70,10 +79,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Heartbeat Server")
     parser.add_argument('--setup', action='store_true', help='Setup supervisor')
     parser.add_argument('--serve', action='store_true', help='Start server')
+    parser.add_argument('--user', help='User to run supervisor script with')
 
     args = parser.parse_args()
     if args.setup:
-        ouput = setup_supervisor()
+        create_logs_folder()
+        ouput = setup_supervisor(args.user)
         print("Supervisor setup in file: %s\n" % os.path.abspath(ouput))
         config_location, exists = setup_config_json()
         if exists:
