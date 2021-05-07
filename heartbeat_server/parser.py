@@ -1,3 +1,5 @@
+from datetime import datetime
+
 
 class HeartbeartData:
     def __init__(self, data):
@@ -76,4 +78,5 @@ class HeartbeartData:
             "fixed_format": self.fixed_format.hex(),
             "device_ip": self.address.decode(),
             "device_details": self.device_details.decode(),
+            "timestamp": datetime.now().timestamp()
         }
