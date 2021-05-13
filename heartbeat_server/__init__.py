@@ -51,8 +51,9 @@ async def push_to_queue(queue_id, message, deps):
 async def server_handler(reader, writer, deps):
     logger = deps['logger']
     data = bytearray()
+    peername = writer.get_extra_info('peername')
     while True:
-        part = await reader.read(100)
+        part = await reader.read(1024)
         data += part
         if not part or part.endswith((b'\n', b'\r', b'\r\n')):
             break
@@ -66,6 +67,7 @@ async def server_handler(reader, writer, deps):
         logger.exception("badly formed heartbeat. cannot log or respond!")
 
     if to_push:
+        to_push['peername'] = peername
         device_details = to_push['device_details']
         to_push = json.dumps(to_push, indent=2)
         await push_to_queue(device_details, to_push, deps)
