@@ -63,7 +63,7 @@ async def send_data(reader: StreamReader, writer: StreamWriter,
                     to_send: bytes, logger: Logger):
     await asyncio.sleep(1)
     writer.write(to_send)
-    await writer.drain()
+    # await writser.drain()
 
     output = bytearray()
     try:
@@ -86,10 +86,28 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
     logger.info("Received %s", data)
 
     tries = 0
-    response = None
-    to_send = b'\x01\x52\x31\x02\x30\x2E\x32\x2E\x30\x2E\x32\x35\x35\x28\x29\x03\x4D'
+    response = bytearray()
+    end_chars = [b"\x03", b"\x04"]
+    # to_send = b'\x01\x52\x31\x02\x30\x2E\x32\x2E\x30\x2E\x32\x35\x35\x28\x29\x03\x4D'
+    to_send = b'\x01\x52\x31\x02\x30\x2e\x30\x2e\x30\x2e\x39\x2e\x31\x2e\x32\x35\x35\x28\x29\x03\x47'
     while not response and tries < 3:
-        response = await send_data(reader, writer, to_send, logger)
+        # response = await send_data(reader, writer, to_send, logger)
+        logger.info("Trying: %s", tries)
+        await asyncio.sleep(1)
+        writer.write(to_send)
+        # await writer.drain()
+
+        try:
+            await asyncio.sleep(1)
+            # await asyncio.wait_for(read_data(reader, output), timeout=10.0)
+            while True:
+                part = await asyncio.wait_for(reader.read(1), timeout=10.0)
+                response.extend(part)
+                if not part or part in end_chars:
+                    break
+        except (asyncio.TimeoutError, BrokenPipeError):
+            logger.exception('Timeout or pipe broken!')
+
         tries += 1
 
     logger.info("write response: %s", response)
