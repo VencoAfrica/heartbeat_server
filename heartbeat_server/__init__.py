@@ -1,4 +1,5 @@
 import asyncio
+from asyncio.streams import StreamReader, StreamWriter
 import json
 import getpass
 import os
@@ -48,7 +49,7 @@ async def push_to_queue(queue_id, message, deps):
             if logger:
                 logger.exception("Error pushing message to queue")
 
-async def server_handler(reader, writer, deps):
+async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
     logger = deps['logger']
     data = bytearray()
     peername = writer.get_extra_info('peername')
@@ -59,6 +60,19 @@ async def server_handler(reader, writer, deps):
             break
 
     logger.info("Received %s", data)
+
+    writer.write(b'\x01R1\x021.0.32.7.0.255()\x03x')
+    end_chars = [b"\x03", b"\x04"]
+    resp = bytearray()
+    while True:
+        logger.info('read: %s', resp)
+        part = reader.read(1)
+        resp += part
+        if not part or part in end_chars:
+            break
+    
+    logger.info("write response: %s", resp)
+
     to_push = None
     try:
         parsed = HeartbeartData(data)
