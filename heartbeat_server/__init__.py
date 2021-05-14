@@ -2,6 +2,7 @@ import asyncio
 from asyncio.streams import StreamReader, StreamWriter
 import json
 import getpass
+from logging import Logger
 import os
 import sys
 
@@ -49,6 +50,29 @@ async def push_to_queue(queue_id, message, deps):
             if logger:
                 logger.exception("Error pushing message to queue")
 
+
+async def read_data(reader: StreamReader, ouput: bytearray):
+    end_chars = [b"\x03", b"\x04"]
+    while True:
+        part = await reader.read(1)
+        ouput.extend(part)
+        if not part or part in end_chars:
+            break
+ 
+async def send_data(reader: StreamReader, writer: StreamWriter,
+                    to_send: bytes, logger: Logger):
+    await asyncio.sleep(1)
+    writer.write(to_send)
+    await writer.drain()
+
+    output = bytearray()
+    try:
+        await asyncio.sleep(1)
+        await asyncio.wait_for(read_data(reader, output), timeout=10.0)
+    except asyncio.TimeoutError:
+        logger.exception('timeout!')
+    return output
+
 async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
     logger = deps['logger']
     data = bytearray()
@@ -61,17 +85,14 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
 
     logger.info("Received %s", data)
 
-    writer.write(b'\x01R1\x021.0.32.7.0.255()\x03x')
-    end_chars = [b"\x03", b"\x04"]
-    resp = bytearray()
-    while True:
-        logger.info('read: %s', resp)
-        part = reader.read(1)
-        resp += part
-        if not part or part in end_chars:
-            break
-    
-    logger.info("write response: %s", resp)
+    tries = 0
+    response = None
+    to_send = b'\x01\x52\x31\x02\x30\x2E\x32\x2E\x30\x2E\x32\x35\x35\x28\x29\x03\x4D'
+    while not response and tries < 3:
+        response = await send_data(reader, writer, to_send, logger)
+        tries += 1
+
+    logger.info("write response: %s", response)
 
     to_push = None
     try:
