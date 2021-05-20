@@ -70,7 +70,7 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
     peername = writer.get_extra_info('peername')
     data = await HeartbeartData.read_heartbeat(reader, logger)
 
-    logger.info("Received %s", data)
+    logger.info("Received %s", data.hex())
     to_push = None
     parsed = None
     try:
@@ -80,13 +80,15 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
         logger.exception("badly formed heartbeat. cannot log or respond!")
 
     if parsed is not None:
-        logger.info("Sending Server Reply: %s", parsed.get_reply())
+        reply = parsed.get_reply()
+        logger.info("Sending Server Reply: %s", reply.hex())
         await asyncio.sleep(1)
-        writer.write(parsed.get_reply())
+        writer.write(reply)
 
     tries = 0
     response = bytearray()
     to_send = bytearray([0x68, 0x82, 0x23, 0x22, 0x00, 0x90, 0x17, 0x68, 0x01, 0x17, 0x77, 0x77, 0x33, 0x52, 0x63, 0xE5, 0x34, 0x85, 0x64, 0x35, 0x63, 0x61, 0x65, 0x61, 0x63, 0x61, 0x65, 0x68, 0x68, 0x5B, 0x5C, 0x36, 0x80, 0xE5, 0x16])
+    logger.info("Sending Data: %s", to_send.hex())
     while not response and tries < 3:
         logger.info("Trying: %s", tries+1)
         await asyncio.sleep(1)
@@ -96,7 +98,7 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
         response = await read_response(reader, logger=logger)
         tries += 1
 
-    logger.info("write response: %s", response)
+    logger.info("write response: %s", response.hex())
 
     if to_push:
         to_push['peername'] = peername
