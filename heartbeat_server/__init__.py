@@ -73,51 +73,55 @@ async def send_data(reader: StreamReader, writer: StreamWriter,
         logger.exception('timeout!')
     return output
 
+async def read_response(reader: StreamReader, end_chars=None,
+                        buf_size=1, timeout=10.0):
+    data = bytearray()
+    end_chars = end_chars if end_chars is not None else []
+    while True:
+        part = await asyncio.wait_for(reader.read(buf_size), timeout=timeout)
+        data += part
+        if not part or part in end_chars:
+            break
+    return data
+
 async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
     logger = deps['logger']
-    data = bytearray()
     peername = writer.get_extra_info('peername')
-    while True:
-        part = await reader.read(1024)
-        data += part
-        if not part or part.endswith((b'\n', b'\r', b'\r\n')):
-            break
+    data = await HeartbeartData.read_heartbeat(reader, logger)
 
     logger.info("Received %s", data)
+    to_push = None
+    parsed = None
+    try:
+        parsed = HeartbeartData(data)
+        to_push = parsed.get_parsed()
+    except:
+        logger.exception("badly formed heartbeat. cannot log or respond!")
+
+    if parsed is not None:
+        logger.info("Sending Server Reply: %s", parsed.get_reply())
+        await asyncio.sleep(1)
+        writer.write(parsed.get_reply())
 
     tries = 0
     response = bytearray()
-    end_chars = [b"\x03", b"\x04"]
     # to_send = b'\x01\x52\x31\x02\x30\x2E\x32\x2E\x30\x2E\x32\x35\x35\x28\x29\x03\x4D'
-    to_send = b'\x01\x52\x31\x02\x30\x2e\x30\x2e\x30\x2e\x39\x2e\x31\x2e\x32\x35\x35\x28\x29\x03\x47'
+    # to_send = b'\x01\x52\x31\x02\x30\x2e\x30\x2e\x30\x2e\x39\x2e\x31\x2e\x32\x35\x35\x28\x29\x03\x47'
+    to_send = bytearray([0x68, 0x42, 0x97, 0x22, 0x00, 0x90, 0x17, 0x68, 0x01, 0x17, 0x77, 0x77, 0x33, 0x52, 0x63, 0xE5, 0x34, 0x85, 0x64, 0x35, 0x63, 0x61, 0x65, 0x61, 0x63, 0x61, 0x65, 0x68, 0x68, 0x5B, 0x5C, 0x36, 0x80, 0xE5, 0x16])
     while not response and tries < 3:
-        # response = await send_data(reader, writer, to_send, logger)
         logger.info("Trying: %s", tries)
         await asyncio.sleep(1)
         writer.write(to_send)
-        # await writer.drain()
 
         try:
             await asyncio.sleep(1)
-            # await asyncio.wait_for(read_data(reader, output), timeout=10.0)
-            while True:
-                part = await asyncio.wait_for(reader.read(1), timeout=10.0)
-                response.extend(part)
-                if not part or part in end_chars:
-                    break
+            response = await read_response(reader)
         except (asyncio.TimeoutError, BrokenPipeError):
             logger.exception('Timeout or pipe broken!')
 
         tries += 1
 
     logger.info("write response: %s", response)
-
-    to_push = None
-    try:
-        parsed = HeartbeartData(data)
-        to_push = parsed.get_parsed()
-    except:
-        logger.exception("badly formed heartbeat. cannot log or respond!")
 
     if to_push:
         to_push['peername'] = peername

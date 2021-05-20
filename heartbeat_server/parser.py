@@ -1,4 +1,7 @@
+import asyncio
+from asyncio.streams import StreamReader
 from datetime import datetime
+from logging import Logger
 
 
 class HeartbeartData:
@@ -74,9 +77,37 @@ class HeartbeartData:
             "version_number": self.version_number.hex(),
             "source_address": self.source_address.hex(),
             "target_address": self.target_address.hex(),
-            "frame_length": self.fixed_format_length.hex(),
+            "frame_length": self.frame_length.hex(),
             "fixed_format": self.fixed_format.hex(),
             "device_ip": self.address.decode(),
             "device_details": self.device_details.decode(),
             "timestamp": datetime.now().timestamp()
         }
+
+    def get_reply(self):
+        frame_length_size = 2
+        frame_length = len(self.fixed_format)
+        return b''.join([
+            self.version_number,
+            self.target_address,
+            self.source_address,
+            frame_length.to_bytes(frame_length_size, 'big'),
+            self.fixed_format
+        ])
+
+    @staticmethod
+    async def read_heartbeat(reader: StreamReader, logger: Logger = None):
+        data = bytearray()
+        try:
+            part = await asyncio.wait_for(reader.read(8), timeout=10.0)
+            if len(part) == 8:
+                data += part
+                frame_length = part[-2:]
+                frame_length_int = int.from_bytes(frame_length, 'big')
+                part = await asyncio.wait_for(reader.read(frame_length_int),
+                                            timeout=10.0)
+                data += part
+        except asyncio.TimeoutError:
+            if logger is not None:
+                logger.exception("Timeout reading heartbeat")
+        return data
