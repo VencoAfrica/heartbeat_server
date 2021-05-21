@@ -8,8 +8,10 @@ import sys
 
 import aioredis
 
+from iec62056_21.messages import CommandMessage
+
 from heartbeat_server.logger import get_logger
-from heartbeat_server.parser import HeartbeartData
+from heartbeat_server.parser import HeartbeartData, prep_data
 
 
 def load_config(filename="config.json", deps=None):
@@ -87,7 +89,10 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
 
     tries = 0
     response = bytearray()
-    to_send = bytearray([0x68, 0x82, 0x23, 0x22, 0x00, 0x90, 0x17, 0x68, 0x01, 0x17, 0x77, 0x77, 0x33, 0x52, 0x63, 0xE5, 0x34, 0x85, 0x64, 0x35, 0x63, 0x61, 0x65, 0x61, 0x63, 0x61, 0x65, 0x68, 0x68, 0x5B, 0x5C, 0x36, 0x80, 0xE5, 0x16])
+
+    msg = CommandMessage.for_single_read('0.0.0.9.1.255')
+    to_send = prep_data('179000222382', '01', '82', '33333333', msg.to_bytes())
+
     logger.info("Sending Data: %s", to_send.hex())
     while not response and tries < 3:
         logger.info("Trying: %s", tries+1)

@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 __version__ = "0.0.1"
 
-install_requires = ["aioredis==1.3.1"]
+install_requires = ["aioredis==1.3.1", "iec62056-21"]
 
 setup(
 	name="heartbeat_server",

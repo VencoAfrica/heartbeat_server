@@ -111,3 +111,60 @@ class HeartbeartData:
             if logger is not None:
                 logger.exception("Timeout reading heartbeat")
         return data
+
+
+def CRC(crc, buf):
+    CRC8Tbl = bytearray([
+        0x00, 0x31, 0x62, 0x53, 0xC4, 0xF5, 0xA6, 0x97,
+        0xB9, 0x88, 0xDB, 0xEA, 0x7D, 0x4C, 0x1F, 0x2E
+    ])
+    crc_int = int.from_bytes(crc, 'big')
+    for b in buf:
+        tmp = crc_int >> 4
+        crc_int = (crc_int << 4) & 255
+        crc_int ^= CRC8Tbl[tmp ^ (b >> 4)]
+        tmp = crc_int >> 4
+        crc_int = (crc_int << 4) & 255
+        crc_int ^= CRC8Tbl[tmp ^ (b & 0x0F)]
+    return crc_int.to_bytes(1, 'big')
+
+def get_meter_no(meter):
+    n = len(meter)
+    meter_reversed = [meter[i-2: n+i] for i in range(0, -n, -2)]
+    return bytearray(int('0x%s'%i, 16) for i in meter_reversed)
+
+def get_mac(password, low_or_high='L'):
+    arr = bytearray()
+    if low_or_high == 'L':
+        arr += b'\x1F' + bytes(password,'utf-8')
+    elif low_or_high == 'H':
+        arr += bytes(password,'utf-8') + b'\x1F'
+    else:
+        raise TypeError('low_or_high should be "H" or "L"')
+    crc = CRC(b'\xA5', arr)
+    return (int.from_bytes(crc, 'big') + 0x33).to_bytes(2, 'big')[-1:]
+
+def prep_data(meter_no, pass_lvl, random_no, passw, data):
+	if not isinstance(pass_lvl, bytes):
+		pass_lvl = str(int(str(pass_lvl))).encode()
+
+	if not isinstance(random_no, bytes):
+		random_no = int(str(random_no)).to_bytes(1, 'big')
+
+	# 77 77 PA 52 MAC_L MAC_H, length = 6
+	length = 6 + len(data)
+	out = bytearray([0x68])
+	out += get_meter_no(meter_no)
+	out += bytearray([0x68, 0x01])
+	out += length.to_bytes(1, 'big')
+	out += bytearray([0x77, 0x77])
+	out += pass_lvl
+	out += random_no
+	out += get_mac(passw, 'L')
+	out += get_mac(passw, 'H')
+	out += data
+
+	data_sum = sum(out)
+	out += data_sum.to_bytes(2, 'big')[-1:]
+	out += bytearray([0x16])
+	return out
