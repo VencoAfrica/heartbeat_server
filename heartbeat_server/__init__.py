@@ -67,6 +67,46 @@ async def read_response(reader: StreamReader, end_chars=None,
             logger.exception("timeout reading response after %ss", timeout)
     return data
 
+def prepare_config_schedule(config):
+    schedule = config.get('schedule', {})
+    by_meters = {}
+    for obis_code, meters in schedule.items():
+        for meter in meters:
+            if meter not in by_meters:
+                by_meters[meter] = []
+            by_meters[meter].append(obis_code)
+    config['schedule'] = by_meters
+    return config
+
+async def get_scheduled_values(reader, writer, schedule, logger=None):
+    ''' return values dict with meter as key '''
+
+    logger.info("Getting schedule data: %s", schedule)
+    out = {k: [] for k in schedule}
+    for meter, obis_codes in schedule.items():
+        for obis_code in obis_codes:
+            msg = CommandMessage.for_single_read(obis_code)
+            data = prep_data(meter, '01', '82', '33333333', msg.to_bytes())
+            response = await send_data(data, reader, writer, logger)
+            if response:
+                response += b"|" + bytes(obis_code, encoding='utf-8')
+                out[meter].append(response)
+    return out
+
+async def send_data(data, reader, writer, logger=None):
+    tries = 0
+    response = bytearray()
+    while not response and tries < 3:
+        if logger is not None:
+            logger.info("Trying: %s", tries+1)
+        await asyncio.sleep(1)
+        writer.write(data)
+
+        await asyncio.sleep(1)
+        response = await read_response(reader, logger=logger, timeout=3.0)
+        tries += 1
+    return response
+
 async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
     logger = deps['logger']
     peername = writer.get_extra_info('peername')
@@ -87,32 +127,43 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
         await asyncio.sleep(1)
         writer.write(reply)
 
-    tries = 0
-    response = bytearray()
-
-    msg = CommandMessage.for_single_read('0.0.0.9.1.255')
-    to_send = prep_data('179000222382', '01', '82', '33333333', msg.to_bytes())
-
-    logger.info("Sending Data: %s", to_send.hex())
-    while not response and tries < 3:
-        logger.info("Trying: %s", tries+1)
-        await asyncio.sleep(1)
-        writer.write(to_send)
-
-        await asyncio.sleep(1)
-        response = await read_response(reader, logger=logger)
-        tries += 1
-
-    logger.info("write response: %s", response.hex())
+    try:
+        scheduled_data = await get_scheduled_values(
+            reader, writer, deps['config']['schedule'], logger
+        )
+    except KeyError:
+        scheduled_data = {}
 
     if to_push:
         to_push['peername'] = peername
         device_details = to_push['device_details']
         to_push = json.dumps(to_push, indent=2)
+        # push heartbeat
         await push_to_queue(device_details, to_push, deps)
+        # push scheduled data
+        for meter, responses in scheduled_data.items():
+            for response in responses:
+                await push_to_queue(meter, response, deps)
         logger.info("Parsed: %s", to_push)
 
     writer.close()
+
+
+
+
+'''
+config.json sample:
+{
+	"tcp":{
+		"port": 18901,
+	},
+	"redis_server_url": "redis://test:bb5qFU9xFMPCWpEJoKOe60zSN1e6LOkT@redis-10661.c259.us-central1-2.gce.cloud.redislabs.com:10661",
+	"schedule": {
+		"0.0.0.9.1.255": ["179000222382"]
+	}
+}
+
+'''
 
 def wrapper(deps):
     async def handler(reader, writer):
@@ -131,6 +182,7 @@ async def main(deps=None):
     config = deps.get('config')
     if config is None:
         config = load_config()
+    config = prepare_config_schedule(config)
  
     deps['logger'] = logger
     deps['config'] = config
