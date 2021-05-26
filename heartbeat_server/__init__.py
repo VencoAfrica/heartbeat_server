@@ -14,6 +14,10 @@ from heartbeat_server.logger import get_logger
 from heartbeat_server.parser import HeartbeartData, prep_data
 
 
+DEFAULT_PASSWORD_LEVEL =  "01"
+DEFAULT_PASSWORD = "33333333"
+DEFAULT_RANDOM_NUMBER = "82"
+
 def load_config(filename="config.json", deps=None):
     if os.path.exists(filename):
         with open(filename, "r") as f:
@@ -78,15 +82,25 @@ def prepare_config_schedule(config):
     config['schedule'] = by_meters
     return config
 
-async def get_scheduled_values(reader, writer, schedule, logger=None):
+async def get_scheduled_values(reader, writer, schedule, config, logger=None):
     ''' return values dict with meter as key '''
 
     logger.info("Getting schedule data: %s", schedule)
     out = {k: [] for k in schedule}
+    password_level = config.get("password_level", DEFAULT_PASSWORD_LEVEL)
+    password = config.get("password", DEFAULT_PASSWORD)
+    random_number= config.get("random_number", DEFAULT_RANDOM_NUMBER)
+
     for meter, obis_codes in schedule.items():
         for obis_code in obis_codes:
             msg = CommandMessage.for_single_read(obis_code)
-            data = prep_data(meter, '01', '82', '33333333', msg.to_bytes())
+            data = prep_data(
+                meter_no=meter,
+                pass_lvl=password_level,
+                random_no=random_number,
+                passw=password,
+                data=msg.to_bytes()
+            )
             response = await send_data(data, reader, writer, logger)
             if response:
                 response += b"|" + bytes(obis_code, encoding='utf-8')
@@ -106,6 +120,45 @@ async def send_data(data, reader, writer, logger=None):
         response = await read_response(reader, logger=logger, timeout=3.0)
         tries += 1
     return response
+
+async def serve_requests_from_frappe(
+    reader: StreamReader, writer: StreamWriter, deps, timeout=60*10
+):
+    config = deps['config']
+    logger = deps['logger']
+    request_queue = config.get('request_queue')
+    password_level = config.get("password_level", DEFAULT_PASSWORD_LEVEL)
+    password = config.get("password", DEFAULT_PASSWORD)
+    random_number= config.get("random_number", DEFAULT_RANDOM_NUMBER)
+    logger.info("Waiting for frappe requests...")
+
+    async def frappe_server():
+        redis = await get_redis(deps)
+        while True:
+            req = await redis.blpop(request_queue, timeout=4*60)
+            splitted = req[1].split(b'|', 2) if req else []
+            if len(splitted) != 3:
+                continue
+            key, meter, data = splitted
+            to_send = prep_data(
+                meter_no=meter.decode(),
+                pass_lvl=password_level,
+                random_no=random_number,
+                passw=password,
+                data=data
+            )
+            logger.info(
+                "...handling frappe request %s \n(Original: %s)",
+                to_send.hex(), req
+            )
+            response = await send_data(to_send, reader, writer, logger)
+            if response:
+                await push_to_queue(key.decode(), response, deps)
+
+    try:
+        part = await asyncio.wait_for(frappe_server(), timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.exception("error while serving request from frappe")
 
 async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
     logger = deps['logger']
@@ -129,7 +182,8 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
 
     try:
         scheduled_data = await get_scheduled_values(
-            reader, writer, deps['config']['schedule'], logger
+            reader, writer, deps['config']['schedule'],
+            deps['config'], logger
         )
     except KeyError:
         scheduled_data = {}
@@ -145,6 +199,8 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
             for response in responses:
                 await push_to_queue(meter, response, deps)
         logger.info("Parsed: %s", to_push)
+        # serve requests from frappe
+        await serve_requests_from_frappe(reader, writer, deps, timeout=10*60)
 
     writer.close()
 
@@ -157,9 +213,9 @@ config.json sample:
 	"tcp":{
 		"port": 18901,
 	},
-	"redis_server_url": "redis://test:bb5qFU9xFMPCWpEJoKOe60zSN1e6LOkT@redis-10661.c259.us-central1-2.gce.cloud.redislabs.com:10661",
+	"redis_server_url": "redis://usr:pwd@redis-url:port",
 	"schedule": {
-		"0.0.0.9.1.255": ["179000222382"]
+		"0.0.0.0.0.255": ["179000000000"]
 	}
 }
 
