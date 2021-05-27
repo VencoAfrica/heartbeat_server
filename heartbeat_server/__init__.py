@@ -123,7 +123,7 @@ async def send_data(data, reader, writer, logger=None):
     return response
 
 async def serve_requests_from_frappe(
-    reader: StreamReader, writer: StreamWriter, deps, timeout=60*10
+    reader: StreamReader, writer: StreamWriter, deps, timeout=60*5
 ):
     config = deps['config']
     logger = deps['logger']
@@ -136,7 +136,7 @@ async def serve_requests_from_frappe(
     async def frappe_server():
         redis = await get_redis(deps)
         while True:
-            req = await redis.blpop(request_queue, timeout=4*60)
+            req = await redis.blpop(request_queue, timeout=timeout-60)
             splitted = req[1].split(b'|', 2) if req else []
             if len(splitted) != 3:
                 continue
@@ -152,13 +152,16 @@ async def serve_requests_from_frappe(
                 "...handling frappe request %s \n(Original: %s)",
                 to_send.hex(), req
             )
-            response = await send_data(to_send, reader, writer, logger)
+            response = await send_data(to_send, reader, writer, logger) or b''
+            logger.info(
+                "...frappe response for key %s: %s", key, response.hex()
+            )
             if response:
                 await push_to_queue(key.decode(), response, deps)
 
     try:
         part = await asyncio.wait_for(frappe_server(), timeout=timeout)
-    except asyncio.TimeoutError:
+    except (asyncio.TimeoutError, BrokenPipeError):
         logger.exception("error while serving request from frappe")
 
 async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
@@ -181,27 +184,15 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
         await asyncio.sleep(1)
         writer.write(reply)
 
-    try:
-        scheduled_data = await get_scheduled_values(
-            reader, writer, deps['config']['schedule'],
-            deps['config'], logger
-        )
-    except KeyError:
-        scheduled_data = {}
-
     if to_push:
         to_push['peername'] = peername
         device_details = to_push['device_details']
         to_push = json.dumps(to_push, indent=2)
+        logger.info("Parsed: %s", to_push)
         # push heartbeat
         await push_to_queue(device_details, to_push, deps)
-        # push scheduled data
-        for meter, responses in scheduled_data.items():
-            for response in responses:
-                await push_to_queue(meter, response, deps)
-        logger.info("Parsed: %s", to_push)
         # serve requests from frappe
-        await serve_requests_from_frappe(reader, writer, deps, timeout=10*60)
+        await serve_requests_from_frappe(reader, writer, deps, timeout=5*60)
 
     writer.close()
 
