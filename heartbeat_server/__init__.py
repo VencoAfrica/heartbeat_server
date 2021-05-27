@@ -152,7 +152,7 @@ async def serve_requests_from_frappe(
                 "...handling frappe request %s \n(Original: %s)",
                 to_send.hex(), req
             )
-            response = await send_data(to_send, reader, writer, logger) or b''
+            response = await send_data(to_send, reader, writer, logger)
             logger.info(
                 "...frappe response for key %s: %s", key, response.hex()
             )
@@ -169,11 +169,11 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
     peername = writer.get_extra_info('peername')
     data = await HeartbeartData.read_heartbeat(reader, logger)
 
-    logger.info("Received %s", data.hex())
+    logger.info("Received %s", b''.join(data).hex())
     to_push = None
     parsed = None
     try:
-        parsed = HeartbeartData(data)
+        parsed = HeartbeartData(data[0])
         to_push = parsed.get_parsed()
     except:
         logger.exception("badly formed heartbeat. cannot log or respond!")

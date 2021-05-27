@@ -97,20 +97,27 @@ class HeartbeartData:
 
     @staticmethod
     async def read_heartbeat(reader: StreamReader, logger: Logger = None):
-        data = bytearray()
-        try:
-            part = await asyncio.wait_for(reader.read(8), timeout=10.0)
-            if len(part) == 8:
+        out = []
+        while True:
+            data = bytearray()
+            try:
+                part = await asyncio.wait_for(reader.read(8), timeout=3.0)
+                if len(part) != 8:
+                    break
                 data += part
                 frame_length = part[-2:]
                 frame_length_int = int.from_bytes(frame_length, 'big')
-                part = await asyncio.wait_for(reader.read(frame_length_int),
-                                            timeout=10.0)
+                part = await asyncio.wait_for(
+                    reader.read(frame_length_int), timeout=3.0)
                 data += part
-        except asyncio.TimeoutError:
-            if logger is not None:
-                logger.exception("Timeout reading heartbeat")
-        return data
+                out.append(data)
+            except asyncio.TimeoutError:
+                if logger is not None:
+                    logger.exception("Timeout reading heartbeat")
+                if data:
+                    out.append(data)
+                break
+        return out
 
 
 def CRC(crc, buf):
@@ -132,7 +139,7 @@ def get_meter_no(meter):
     meter = ''.join(ch for ch in meter if ch.isdecimal())
     n = len(meter)
     meter_reversed = [meter[i-2: n+i] for i in range(0, -n, -2)]
-    return bytearray(int('0x%s'%i, 16) for i in meter_reversed)
+    return bytearray(int(i, 16) for i in meter_reversed)
 
 def get_mac(password, low_or_high='L'):
     arr = bytearray()
