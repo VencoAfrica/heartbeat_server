@@ -17,6 +17,7 @@ from heartbeat_server.parser import HeartbeartData, prep_data
 DEFAULT_PASSWORD_LEVEL =  "01"
 DEFAULT_PASSWORD = "33333333"
 DEFAULT_RANDOM_NUMBER = "82"
+DEFAULT_REQUEST_QUEUE = 'request_queue'
 
 def load_config(filename="config.json", deps=None):
     if os.path.exists(filename):
@@ -126,7 +127,7 @@ async def serve_requests_from_frappe(
 ):
     config = deps['config']
     logger = deps['logger']
-    request_queue = config.get('request_queue')
+    request_queue = config.get('request_queue', DEFAULT_REQUEST_QUEUE)
     password_level = config.get("password_level", DEFAULT_PASSWORD_LEVEL)
     password = config.get("password", DEFAULT_PASSWORD)
     random_number= config.get("random_number", DEFAULT_RANDOM_NUMBER)

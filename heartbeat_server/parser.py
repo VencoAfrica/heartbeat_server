@@ -129,6 +129,7 @@ def CRC(crc, buf):
     return crc_int.to_bytes(1, 'big')
 
 def get_meter_no(meter):
+    meter = ''.join(ch for ch in meter if ch.isdecimal())
     n = len(meter)
     meter_reversed = [meter[i-2: n+i] for i in range(0, -n, -2)]
     return bytearray(int('0x%s'%i, 16) for i in meter_reversed)
