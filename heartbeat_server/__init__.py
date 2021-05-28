@@ -33,7 +33,7 @@ async def redis_pool(url, deps=None):
     if 'redis' in deps:
         return deps['redis']
 
-    conn = await aioredis.create_redis_pool(url)
+    conn = await aioredis.create_redis_pool(url, timeout=10)
     deps['redis'] = conn
     return conn
 
@@ -72,42 +72,6 @@ async def read_response(reader: StreamReader, end_chars=None,
             logger.exception("timeout reading response after %ss", timeout)
     return data
 
-def prepare_config_schedule(config):
-    schedule = config.get('schedule', {})
-    by_meters = {}
-    for obis_code, meters in schedule.items():
-        for meter in meters:
-            if meter not in by_meters:
-                by_meters[meter] = []
-            by_meters[meter].append(obis_code)
-    config['schedule'] = by_meters
-    return config
-
-async def get_scheduled_values(reader, writer, schedule, config, logger=None):
-    ''' return values dict with meter as key '''
-
-    logger.info("Getting schedule data: %s", schedule)
-    out = {k: [] for k in schedule}
-    password_level = config.get("password_level", DEFAULT_PASSWORD_LEVEL)
-    password = config.get("password", DEFAULT_PASSWORD)
-    random_number= config.get("random_number", DEFAULT_RANDOM_NUMBER)
-
-    for meter, obis_codes in schedule.items():
-        for obis_code in obis_codes:
-            msg = CommandMessage.for_single_read(obis_code)
-            data = prep_data(
-                meter_no=meter,
-                pass_lvl=password_level,
-                random_no=random_number,
-                passw=password,
-                data=msg.to_bytes()
-            )
-            response = await send_data(data, reader, writer, logger)
-            if response:
-                response += b"|" + bytes(obis_code, encoding='utf-8')
-                out[meter].append(response)
-    return out
-
 async def send_data(data, reader, writer, logger=None):
     tries = 0
     response = bytearray()
@@ -136,7 +100,7 @@ async def serve_requests_from_frappe(
     async def frappe_server():
         redis = await get_redis(deps)
         while True:
-            req = await redis.blpop(request_queue, timeout=timeout-60)
+            req = await redis.blpop(request_queue, timeout=3*60)
             splitted = req[1].split(b'|', 2) if req else []
             if len(splitted) != 3:
                 continue
@@ -160,6 +124,7 @@ async def serve_requests_from_frappe(
                 await push_to_queue(key.decode(), response, deps)
 
     try:
+        # TODO: close the loop cleanly after timeout
         part = await asyncio.wait_for(frappe_server(), timeout=timeout)
     except (asyncio.TimeoutError, BrokenPipeError):
         logger.exception("error while serving request from frappe")
@@ -192,26 +157,14 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
         # push heartbeat
         await push_to_queue(device_details, to_push, deps)
         # serve requests from frappe
-        await serve_requests_from_frappe(reader, writer, deps, timeout=5*60)
+        await serve_requests_from_frappe(reader, writer, deps, timeout=4*60)
 
     writer.close()
 
 
 
 
-'''
-config.json sample:
-{
-	"tcp":{
-		"port": 18901,
-	},
-	"redis_server_url": "redis://usr:pwd@redis-url:port",
-	"schedule": {
-		"0.0.0.0.0.255": ["179000000000"]
-	}
-}
 
-'''
 
 def wrapper(deps):
     async def handler(reader, writer):
@@ -230,7 +183,6 @@ async def main(deps=None):
     config = deps.get('config')
     if config is None:
         config = load_config()
-    config = prepare_config_schedule(config)
  
     deps['logger'] = logger
     deps['config'] = config
