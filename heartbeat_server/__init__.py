@@ -1,5 +1,6 @@
 import asyncio
 from asyncio.streams import StreamReader, StreamWriter
+from concurrent.futures import FIRST_EXCEPTION
 import json
 import getpass
 from logging import Logger
@@ -18,6 +19,12 @@ DEFAULT_PASSWORD_LEVEL =  "01"
 DEFAULT_PASSWORD = "33333333"
 DEFAULT_RANDOM_NUMBER = "82"
 DEFAULT_REQUEST_QUEUE = 'request_queue'
+
+
+async def raise_after(timeout):
+    ''' raise `asyncio.TimeoutError` after specified time in seconds '''
+    await asyncio.sleep(timeout)
+    raise asyncio.TimeoutError
 
 def load_config(filename="config.json", deps=None):
     if os.path.exists(filename):
@@ -86,48 +93,78 @@ async def send_data(data, reader, writer, logger=None):
         tries += 1
     return response
 
+def prep_data_from_config(config, meter_no, data):
+    password_level = config.get("password_level", DEFAULT_PASSWORD_LEVEL)
+    password = config.get("password", DEFAULT_PASSWORD)
+    random_number= config.get("random_number", DEFAULT_RANDOM_NUMBER)
+
+    return prep_data(
+        meter_no=meter_no,
+        pass_lvl=password_level,
+        random_no=random_number,
+        passw=password,
+        data=data
+    )
+
 async def serve_requests_from_frappe(
     reader: StreamReader, writer: StreamWriter, deps, timeout=60*5
 ):
     config = deps['config']
     logger = deps['logger']
     request_queue = config.get('request_queue', DEFAULT_REQUEST_QUEUE)
-    password_level = config.get("password_level", DEFAULT_PASSWORD_LEVEL)
-    password = config.get("password", DEFAULT_PASSWORD)
-    random_number= config.get("random_number", DEFAULT_RANDOM_NUMBER)
     logger.info("Waiting for frappe requests...")
 
-    async def frappe_server():
-        redis = await get_redis(deps)
-        while True:
-            req = await redis.blpop(request_queue, timeout=3*60)
-            splitted = req[1].split(b'|', 2) if req else []
-            if len(splitted) != 3:
-                continue
-            key, meter, data = splitted
-            to_send = prep_data(
-                meter_no=meter.decode(),
-                pass_lvl=password_level,
-                random_no=random_number,
-                passw=password,
-                data=data
-            )
-            logger.info(
-                "...handling frappe request %s \n(Original: %s)",
-                to_send.hex(), req
-            )
-            response = await send_data(to_send, reader, writer, logger)
-            logger.info(
-                "...frappe response for key %s: %s", key, response.hex()
-            )
-            if response:
-                await push_to_queue(key.decode(), response, deps)
+    async def frappe_server(shared):
+        try:
+            redis = await get_redis(deps)
+            while shared['can_pool']:
+                req = await redis.blpop(request_queue, timeout=3*60)
+                splitted = req[1].split(b'|', 2) if req else []
+                if len(splitted) != 3:
+                    continue
+                key, meter, data = splitted
+                to_send = prep_data_from_config(
+                    meter_no=meter.decode(), config=config, data=data
+                )
+                logger.info(
+                    "...handling frappe request %s \n(Original: %s)",
+                    to_send.hex(), req
+                )
+                response = await send_data(to_send, reader, writer, logger)
+                logger.info(
+                    "...frappe response for key %s: %s", key, response.hex()
+                )
+                if response:
+                    await push_to_queue(key.decode(), response, deps)
+            logger.info("Done waiting for frappe requests...")
+        except:
+            logger.exception('error while serving request from frappe')
+            raise
 
+    shared = {'can_pool': True}
+    server_task = asyncio.create_task(frappe_server(shared))
+    timer_task = asyncio.create_task(raise_after(timeout))
+    done, _ = await asyncio.wait(
+        {server_task, timer_task}, return_when=FIRST_EXCEPTION
+    )
+    if server_task in done:
+        timer_task.cancel()
+        return
+    shared['can_pool'] = False
+    await server_task
+
+async def test_read(writer, reader, logger):
+    ''' read time to confirm everything still works '''
+    msg = CommandMessage.for_single_read('0.0.0.9.1.255')
+    to_send = prep_data('179000222382', '01', '82', '33333333', msg.to_bytes())
+    logger.info("Sending Data [test]: %s", to_send.hex())
     try:
-        # TODO: close the loop cleanly after timeout
-        part = await asyncio.wait_for(frappe_server(), timeout=timeout)
-    except (asyncio.TimeoutError, BrokenPipeError):
-        logger.exception("error while serving request from frappe")
+        response = await send_data(to_send, reader, writer, logger)
+        logger.info("write response [test]: %s", response.hex())
+    except BrokenPipeError:
+        # avoid atempts to write here
+        writer.close()
+        logger.exception("broken pipe on test read")
 
 async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
     logger = deps['logger']
@@ -148,6 +185,8 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
         logger.info("Sending Server Reply: %s", reply.hex())
         await asyncio.sleep(1)
         writer.write(reply)
+
+    await test_read(writer, reader, logger)
 
     if to_push:
         to_push['peername'] = peername
