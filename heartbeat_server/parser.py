@@ -142,11 +142,14 @@ def get_meter_no(meter):
     return bytearray(int(i, 16) for i in meter_reversed)
 
 def get_mac(password, low_or_high='L'):
+    if not isinstance(password, (bytes, bytearray)):
+        password = bytes(password,'utf-8')
+
     arr = bytearray()
     if low_or_high == 'L':
-        arr += b'\x1F' + bytes(password,'utf-8')
+        arr += b'\x1F' + password
     elif low_or_high == 'H':
-        arr += bytes(password,'utf-8') + b'\x1F'
+        arr += password + b'\x1F'
     else:
         raise TypeError('low_or_high should be "H" or "L"')
     crc = CRC(b'\xA5', arr)
@@ -154,10 +157,10 @@ def get_mac(password, low_or_high='L'):
 
 def prep_data(meter_no, pass_lvl, random_no, passw, data):
 	if not isinstance(pass_lvl, bytes):
-		pass_lvl = str(int(str(pass_lvl))).encode()
+		pass_lvl = (int(str(pass_lvl)) + 0x33).to_bytes(1, 'big')
 
 	if not isinstance(random_no, bytes):
-		random_no = int(str(random_no)).to_bytes(1, 'big')
+		random_no = (int(str(random_no)) + 0x33).to_bytes(1, 'big')
 
 	# 77 77 PA 52 MAC_L MAC_H, length = 6
 	length = 6 + len(data)

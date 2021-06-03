@@ -168,7 +168,7 @@ async def test_read(reader, writer, logger):
 async def read_time(reader, writer, logger):
     msg = CommandMessage.for_single_read('0.0.0.9.1.255')
     msg_bytes = msg.to_bytes().replace(b'()',b'')
-    to_send = prep_data('179000222382', '01', '82', '33333333', msg_bytes)
+    to_send = prep_data('179000222382', 0x01, 31, b'33333333', msg_bytes)
     logger.info("Sending Data [time]: %s", to_send.hex())
     try:
         response = await send_data(to_send, reader, writer, logger)
@@ -181,7 +181,7 @@ async def read_time(reader, writer, logger):
 async def read_date(reader, writer, logger):
     msg = CommandMessage.for_single_read('0.0.0.9.2.255')
     msg_bytes = msg.to_bytes().replace(b'()',b'')
-    to_send = prep_data('179000222382', '01', '82', '33333333', msg_bytes)
+    to_send = prep_data('179000222382', 0x01, 31, b'33333333', msg_bytes)
     logger.info("Sending Data [date]: %s", to_send.hex())
     try:
         response = await send_data(to_send, reader, writer, logger)
@@ -194,7 +194,7 @@ async def read_date(reader, writer, logger):
 async def read_voltage(reader, writer, logger):
     msg = CommandMessage.for_single_read('1.0.32.7.0.255')
     msg_bytes = msg.to_bytes().replace(b'()',b'')
-    to_send = prep_data('179000222382', '01', '82', '33333333', msg_bytes)
+    to_send = prep_data('179000222382', 0x01, 31, b'33333333', msg_bytes)
     logger.info("Sending Data [voltage]: %s", to_send.hex())
     try:
         response = await send_data(to_send, reader, writer, logger)
