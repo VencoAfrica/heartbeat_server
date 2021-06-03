@@ -153,14 +153,49 @@ async def serve_requests_from_frappe(
     shared['can_pool'] = False
     await server_task
 
-async def test_read(writer, reader, logger):
+async def test_read(reader, writer, logger):
     ''' read time to confirm everything still works '''
-    msg = CommandMessage.for_single_read('0.0.0.9.1.255')
-    to_send = prep_data('179000222382', '01', '82', '33333333', msg.to_bytes())
+    to_send = bytearray([0x68, 0x82, 0x23, 0x22, 0x00, 0x90, 0x17, 0x68, 0x01, 0x17, 0x77, 0x77, 0x33, 0x52, 0x63, 0xE5, 0x34, 0x85, 0x64, 0x35, 0x63, 0x61, 0x65, 0x61, 0x63, 0x61, 0x65, 0x68, 0x68, 0x5B, 0x5C, 0x36, 0x80, 0xE5, 0x16])
     logger.info("Sending Data [test]: %s", to_send.hex())
     try:
         response = await send_data(to_send, reader, writer, logger)
         logger.info("write response [test]: %s", response.hex())
+    except BrokenPipeError:
+        # avoid atempts to write here
+        writer.close()
+        logger.exception("broken pipe on test read")
+
+async def read_time(reader, writer, logger):
+    msg = CommandMessage.for_single_read('0.0.0.9.1.255')
+    to_send = prep_data('179000222382', '01', '82', '33333333', msg.to_bytes())
+    logger.info("Sending Data [time]: %s", to_send.hex())
+    try:
+        response = await send_data(to_send, reader, writer, logger)
+        logger.info("write response [time]: %s", response.hex())
+    except BrokenPipeError:
+        # avoid atempts to write here
+        writer.close()
+        logger.exception("broken pipe on time read")
+
+async def read_date(reader, writer, logger):
+    msg = CommandMessage.for_single_read('0.0.0.9.2.255')
+    to_send = prep_data('179000222382', '01', '82', '33333333', msg.to_bytes())
+    logger.info("Sending Data [date]: %s", to_send.hex())
+    try:
+        response = await send_data(to_send, reader, writer, logger)
+        logger.info("write response [date]: %s", response.hex())
+    except BrokenPipeError:
+        # avoid atempts to write here
+        writer.close()
+        logger.exception("broken pipe on date read")
+
+async def read_voltage(reader, writer, logger):
+    msg = CommandMessage.for_single_read('1.0.32.7.0.255')
+    to_send = prep_data('179000222382', '01', '82', '33333333', msg.to_bytes())
+    logger.info("Sending Data [voltage]: %s", to_send.hex())
+    try:
+        response = await send_data(to_send, reader, writer, logger)
+        logger.info("write response [voltage]: %s", response.hex())
     except BrokenPipeError:
         # avoid atempts to write here
         writer.close()
@@ -186,7 +221,10 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
         await asyncio.sleep(1)
         writer.write(reply)
 
-    await test_read(writer, reader, logger)
+    await test_read(reader, writer, logger)
+    await read_time(reader, writer, logger)
+    await read_date(reader, writer, logger)
+    await read_voltage(reader, writer, logger)
 
     if to_push:
         to_push['peername'] = peername
@@ -196,7 +234,7 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
         # push heartbeat
         await push_to_queue(device_details, to_push, deps)
         # serve requests from frappe
-        await serve_requests_from_frappe(reader, writer, deps, timeout=4*60)
+        # await serve_requests_from_frappe(reader, writer, deps, timeout=4*60)
 
     writer.close()
 
