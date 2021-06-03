@@ -170,7 +170,7 @@ def prep_data(meter_no, pass_lvl, random_no, passw, data):
 	out += random_no
 	out += get_mac(passw, 'L')
 	out += get_mac(passw, 'H')
-	out += data
+	out += bytearray(0x33 + i for i in data)
 
 	data_sum = sum(out)
 	out += data_sum.to_bytes(2, 'big')[-1:]
