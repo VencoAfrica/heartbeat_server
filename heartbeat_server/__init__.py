@@ -153,56 +153,30 @@ async def serve_requests_from_frappe(
     shared['can_pool'] = False
     await server_task
 
-async def test_read(reader, writer, logger):
-    ''' read time to confirm everything still works '''
-    to_send = bytearray([0x68, 0x82, 0x23, 0x22, 0x00, 0x90, 0x17, 0x68, 0x01, 0x17, 0x77, 0x77, 0x33, 0x52, 0x63, 0xE5, 0x34, 0x85, 0x64, 0x35, 0x63, 0x61, 0x65, 0x61, 0x63, 0x61, 0x65, 0x68, 0x68, 0x5B, 0x5C, 0x36, 0x80, 0x53, 0x16])
-    logger.info("Sending Data [test]: %s", to_send.hex())
-    try:
-        response = await send_data(to_send, reader, writer, logger)
-        logger.info("write response [test]: %s", response.hex())
-    except BrokenPipeError:
-        # avoid atempts to write here
-        writer.close()
-        logger.exception("broken pipe on test read")
 
-async def read_time(reader, writer, logger):
-    msg = CommandMessage.for_single_read('0.0.0.9.1.255')
-    msg_bytes = msg.to_bytes().replace(b'()',b'')
-    to_send = prep_data('179000222382', 0x01, 31, b'33333333', msg_bytes)
-    logger.info("Sending Data [time]: %s", to_send.hex())
-    try:
-        response = await send_data(to_send, reader, writer, logger)
-        logger.info("write response [time]: %s", response.hex())
-    except BrokenPipeError:
-        # avoid atempts to write here
-        writer.close()
-        logger.exception("broken pipe on time read")
+async def test_reads(reader, writer, logger):
+    codes = [
+        ('time', '0.0.0.9.1.255'), ('date', '0.0.0.9.2.255'),
+        ('voltage', '1.0.32.7.0.255'), 
+    ]
+    passwords = [
+        (0, b'DONSUN18'), (1, b'33333333'), (2, b'22222222'), (3, b'11111111')
+    ]
+    funcs = [lambda x: x.replace(b'()', b''), lambda x: x]
+    for func in funcs:
+        for label, code in codes:
+            msg = func(CommandMessage.for_single_read(code).to_bytes())
+            for PA, password in passwords:
+                to_send = prep_data('179000222382', PA, 31, password, msg)
+                logger.info("Sending Data [%s %r]: %s", label, (PA, password), to_send.hex())
+                try:
+                    response = await send_data(to_send, reader, writer, logger)
+                    logger.info("write response [%s %r]: %s", label, (PA, password), response.hex())
+                except BrokenPipeError:
+                    # avoid atempts to write here
+                    writer.close()
+                    logger.exception("broken pipe on time read")
 
-async def read_date(reader, writer, logger):
-    msg = CommandMessage.for_single_read('0.0.0.9.2.255')
-    msg_bytes = msg.to_bytes().replace(b'()',b'')
-    to_send = prep_data('179000222382', 0x01, 31, b'33333333', msg_bytes)
-    logger.info("Sending Data [date]: %s", to_send.hex())
-    try:
-        response = await send_data(to_send, reader, writer, logger)
-        logger.info("write response [date]: %s", response.hex())
-    except BrokenPipeError:
-        # avoid atempts to write here
-        writer.close()
-        logger.exception("broken pipe on date read")
-
-async def read_voltage(reader, writer, logger):
-    msg = CommandMessage.for_single_read('1.0.32.7.0.255')
-    msg_bytes = msg.to_bytes().replace(b'()',b'')
-    to_send = prep_data('179000222382', 0x01, 31, b'33333333', msg_bytes)
-    logger.info("Sending Data [voltage]: %s", to_send.hex())
-    try:
-        response = await send_data(to_send, reader, writer, logger)
-        logger.info("write response [voltage]: %s", response.hex())
-    except BrokenPipeError:
-        # avoid atempts to write here
-        writer.close()
-        logger.exception("broken pipe on test read")
 
 async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
     logger = deps['logger']
@@ -224,10 +198,7 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
         await asyncio.sleep(1)
         writer.write(reply)
 
-    # await test_read(reader, writer, logger)
-    await read_time(reader, writer, logger)
-    await read_date(reader, writer, logger)
-    await read_voltage(reader, writer, logger)
+    await test_reads(reader, writer, logger)
 
     if to_push:
         to_push['peername'] = peername
