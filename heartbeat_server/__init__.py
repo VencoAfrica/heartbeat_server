@@ -12,7 +12,7 @@ import aioredis
 from iec62056_21.messages import CommandMessage
 
 from heartbeat_server.logger import get_logger
-from heartbeat_server.parser import HeartbeartData, prep_data
+from heartbeat_server.parser import HeartbeartData, prep_data, prep_response
 
 
 DEFAULT_PASSWORD_LEVEL =  "01"
@@ -41,6 +41,12 @@ async def redis_pool(url, deps=None):
         return deps['redis']
 
     conn = await aioredis.create_redis_pool(url, timeout=10)
+
+    if 'config' in deps:
+        # clear past requests
+        request_queue = deps['config'].get('request_queue', DEFAULT_REQUEST_QUEUE)
+        conn.ltrim(request_queue, 1, 0)
+
     deps['redis'] = conn
     return conn
 
@@ -135,6 +141,7 @@ async def serve_requests_from_frappe(
                     "...frappe response for key %s: %s", key, response.hex()
                 )
                 if response:
+                    response = prep_response(response, meter.decode())
                     await push_to_queue(key.decode(), response, deps)
             logger.info("Done waiting for frappe requests...")
         except:
@@ -206,7 +213,7 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
         # push heartbeat
         await push_to_queue(device_details, to_push, deps)
         # serve requests from frappe
-        # await serve_requests_from_frappe(reader, writer, deps, timeout=4*60)
+        await serve_requests_from_frappe(reader, writer, deps, timeout=4*60)
 
     writer.close()
 
