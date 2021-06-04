@@ -85,6 +85,14 @@ async def read_response(reader: StreamReader, end_chars=None,
             logger.exception("timeout reading response after %ss", timeout)
     return data
 
+async def send_heartbeat_reply(heartbeat, writer, logger=None):
+    if isinstance(heartbeat, HeartbeartData) and heartbeat.is_valid():
+        reply = heartbeat.get_reply()
+        if logger:
+            logger.info("Sending Server Reply: %s", reply.hex())
+        await asyncio.sleep(1)
+        writer.write(reply)
+
 async def send_data(data, reader, writer, logger=None):
     tries = 0
     response = bytearray()
@@ -96,6 +104,11 @@ async def send_data(data, reader, writer, logger=None):
 
         await asyncio.sleep(1)
         response = await read_response(reader, logger=logger, timeout=3.0)
+        heartbeat = HeartbeartData(response)
+        if heartbeat.is_valid():
+            send_heartbeat_reply(heartbeat, writer, logger)
+            response = bytearray()
+
         tries += 1
     return response
 
@@ -121,28 +134,34 @@ async def serve_requests_from_frappe(
     logger.info("Waiting for frappe requests...")
 
     async def frappe_server(shared):
+        key = None
         try:
             redis = await get_redis(deps)
             while shared['can_pool']:
                 req = await redis.blpop(request_queue, timeout=3*60)
-                splitted = req[1].split(b'|', 2) if req else []
-                if len(splitted) != 3:
+                splitted = req[1].split(b'|', 1) if req else []
+                if len(splitted) != 2:
                     continue
-                key, meter, data = splitted
+                aux, data = json.loads(splitted[0]), splitted[1]
+                key = aux['key']
                 to_send = prep_data_from_config(
-                    meter_no=meter.decode(), config=config, data=data
+                    meter_no=aux['meter'], config=config, data=data
                 )
+                
                 logger.info(
                     "...handling frappe request %s \n(Original: %s)",
                     to_send.hex(), req
                 )
                 response = await send_data(to_send, reader, writer, logger)
+
                 logger.info(
                     "...frappe response for key %s: %s", key, response.hex()
                 )
-                await push_to_queue(key.decode(), response or '', deps)
+                await push_to_queue(key, response or '', deps)
             logger.info("Done waiting for frappe requests...")
         except:
+            if key:
+                await push_to_queue(key, '', deps)
             logger.exception('error while serving request from frappe')
             raise
 
@@ -194,13 +213,7 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
     except:
         logger.exception("badly formed heartbeat. cannot log or respond!")
 
-    if parsed is not None:
-        reply = parsed.get_reply()
-        logger.info("Sending Server Reply: %s", reply.hex())
-        await asyncio.sleep(1)
-        writer.write(reply)
-
-    await test_reads(reader, writer, logger)
+    await send_heartbeat_reply(parsed, writer, logger)
 
     if to_push:
         to_push['peername'] = peername
@@ -210,7 +223,7 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
         # push heartbeat
         await push_to_queue(device_details, to_push, deps)
         # serve requests from frappe
-        await serve_requests_from_frappe(reader, writer, deps, timeout=4*60)
+        await serve_requests_from_frappe(reader, writer, deps, timeout=20*60)
 
     writer.close()
 

@@ -95,6 +95,22 @@ class HeartbeartData:
             self.fixed_format
         ])
 
+    def is_valid(self):
+        if not isinstance(self._data, (bytes, bytearray)):
+            return False
+
+        if not self._data.startswith(b'\x00'):
+            return False
+
+        try:
+            for val in self.get_parsed().values():
+                if not val:
+                    return False
+        except:
+            return False
+
+        return True
+
     @staticmethod
     async def read_heartbeat(reader: StreamReader, logger: Logger = None):
         out = []
@@ -179,18 +195,3 @@ def prep_data(meter_no, pass_lvl, random_no, passw, data):
 	out += data_sum.to_bytes(2, 'big')[-1:]
 	out += bytearray([0x16])
 	return out
-
-def prep_response(response, meter_no):
-    out = []
-    head = bytearray([0x68]) + get_meter_no(meter_no) + bytearray([0x68])
-    parts = response.split(head)
-    for part in parts:
-        if not part:
-            continue
-        if part[0] in [0x81, 0xC1]:
-            start = 4 if part[0] == 0x81 else 2
-            try:
-                out.append(bytearray(i-0x33 for i in part[start:-2]))
-            except:
-                pass
-    return out[-1] if out else response
