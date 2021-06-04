@@ -86,12 +86,18 @@ async def read_response(reader: StreamReader, end_chars=None,
     return data
 
 async def send_heartbeat_reply(heartbeat, writer, logger=None):
-    if isinstance(heartbeat, HeartbeartData) and heartbeat.is_valid():
+    if not isinstance(heartbeat, HeartbeartData):
+        heartbeat = HeartbeartData(heartbeat)
+
+    if heartbeat.is_valid():
         reply = heartbeat.get_reply()
         if logger:
             logger.info("Sending Server Reply: %s", reply.hex())
         await asyncio.sleep(1)
         writer.write(reply)
+    else:
+        if logger:
+            logger.info("Invalid heartbeat: %s", heartbeat._data)
 
 async def send_data(data, reader, writer, logger=None):
     tries = 0
@@ -125,6 +131,19 @@ def prep_data_from_config(config, meter_no, data):
         data=data
     )
 
+def prep_data_from_aux(aux, meter_no, data):
+    password_level = aux.get("PA", DEFAULT_PASSWORD_LEVEL)
+    password = aux.get("PASSWORD", DEFAULT_PASSWORD)
+    random_number= aux.get("RANDOM", DEFAULT_RANDOM_NUMBER)
+
+    return prep_data(
+        meter_no=meter_no,
+        pass_lvl=password_level,
+        random_no=random_number,
+        passw=password,
+        data=data
+    )
+
 async def serve_requests_from_frappe(
     reader: StreamReader, writer: StreamWriter, deps, timeout=60*5
 ):
@@ -144,10 +163,12 @@ async def serve_requests_from_frappe(
                     continue
                 aux, data = json.loads(splitted[0]), splitted[1]
                 key = aux['key']
-                to_send = prep_data_from_config(
-                    meter_no=aux['meter'], config=config, data=data
+                to_send = prep_data_from_aux(
+                    aux=aux, meter_no=aux['meter'], data=data
                 )
-                
+
+                await test_reads(reader, writer, logger)
+
                 logger.info(
                     "...handling frappe request %s \n(Original: %s)",
                     to_send.hex(), req
@@ -214,6 +235,7 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
         logger.exception("badly formed heartbeat. cannot log or respond!")
 
     await send_heartbeat_reply(parsed, writer, logger)
+    await test_reads(reader, writer, logger)
 
     if to_push:
         to_push['peername'] = peername
