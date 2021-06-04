@@ -145,7 +145,7 @@ def prep_data_from_aux(aux, meter_no, data):
     )
 
 async def serve_requests_from_frappe(
-    reader: StreamReader, writer: StreamWriter, deps, timeout=60*5
+    reader: StreamReader, writer: StreamWriter, count, deps, timeout=60*5
 ):
     config = deps['config']
     logger = deps['logger']
@@ -156,7 +156,7 @@ async def serve_requests_from_frappe(
         key = None
         try:
             redis = await get_redis(deps)
-            while shared['can_pool']:
+            while shared['can_pool'] or deps['count'] == count:
                 req = await redis.blpop(request_queue, timeout=3*60)
                 splitted = req[1].split(b'|', 1) if req else []
                 if len(splitted) != 2:
@@ -221,6 +221,8 @@ async def test_reads(reader, writer, logger):
 
 
 async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
+    deps['count'] += 1
+    count = deps['count']
     logger = deps['logger']
     peername = writer.get_extra_info('peername')
     data = await HeartbeartData.read_heartbeat(reader, logger)
@@ -245,7 +247,7 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
         # push heartbeat
         await push_to_queue(device_details, to_push, deps)
         # serve requests from frappe
-        await serve_requests_from_frappe(reader, writer, deps, timeout=20*60)
+        await serve_requests_from_frappe(reader, writer, count, deps, timeout=4*60)
 
     writer.close()
 
@@ -274,6 +276,7 @@ async def main(deps=None):
  
     deps['logger'] = logger
     deps['config'] = config
+    deps['count'] = 0
 
     host = config.get('tcp', {}).get('host', '0.0.0.0')
     port = config.get('tcp', {}).get('port', '18901')
