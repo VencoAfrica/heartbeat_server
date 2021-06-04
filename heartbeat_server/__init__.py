@@ -140,8 +140,7 @@ async def serve_requests_from_frappe(
                 logger.info(
                     "...frappe response for key %s: %s", key, response.hex()
                 )
-                if response:
-                    await push_to_queue(key.decode(), response, deps)
+                await push_to_queue(key.decode(), response or '', deps)
             logger.info("Done waiting for frappe requests...")
         except:
             logger.exception('error while serving request from frappe')
