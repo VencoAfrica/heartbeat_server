@@ -156,26 +156,24 @@ async def serve_requests_from_frappe(
 
 async def test_reads(reader, writer, logger):
     codes = [
-        ('time', '0.0.0.9.1.255'), ('date', '0.0.0.9.2.255'),
-        ('voltage', '1.0.32.7.0.255'), 
+        ('voltage', '32.7.0.255'), ('time', '0.0.0.9.1.255'),
+        ('date', '0.0.0.9.2.255'), 
     ]
     passwords = [
-        (0, b'DONSUN18'), (1, b'33333333'), (2, b'22222222'), (3, b'11111111')
+        (1, b'33333333'), (2, b'22222222'), (3, b'11111111'), (0, b'DONSUN18'),
     ]
-    funcs = [lambda x: x.replace(b'()', b''), lambda x: x]
-    for func in funcs:
-        for label, code in codes:
-            msg = func(CommandMessage.for_single_read(code).to_bytes())
-            for PA, password in passwords:
-                to_send = prep_data('179000222382', PA, 31, password, msg)
-                logger.info("Sending Data [%s %r]: %s", label, (PA, password), to_send.hex())
-                try:
-                    response = await send_data(to_send, reader, writer, logger)
-                    logger.info("write response [%s %r]: %s", label, (PA, password), response.hex())
-                except BrokenPipeError:
-                    # avoid atempts to write here
-                    writer.close()
-                    logger.exception("broken pipe on time read")
+    for label, code in codes:
+        msg = CommandMessage.for_single_read(code).to_bytes()
+        for PA, password in passwords:
+            to_send = prep_data('179000222382', PA, 31, password, msg)
+            logger.info("Sending Data [%s %r]: %s", label, (PA, password), to_send.hex())
+            try:
+                response = await send_data(to_send, reader, writer, logger)
+                logger.info("write response [%s %r]: %s", label, (PA, password), response.hex())
+            except BrokenPipeError:
+                # avoid atempts to write here
+                writer.close()
+                logger.exception("broken pipe on time read")
 
 
 async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
