@@ -12,7 +12,7 @@ import aioredis
 from iec62056_21.messages import CommandMessage
 
 from heartbeat_server.logger import get_logger
-from heartbeat_server.parser import HeartbeartData, prep_data, prep_response
+from heartbeat_server.parser import HeartbeartData, prep_data
 
 
 DEFAULT_PASSWORD_LEVEL =  0x01
@@ -141,7 +141,6 @@ async def serve_requests_from_frappe(
                     "...frappe response for key %s: %s", key, response.hex()
                 )
                 if response:
-                    response = prep_response(response, meter.decode())
                     await push_to_queue(key.decode(), response, deps)
             logger.info("Done waiting for frappe requests...")
         except:
