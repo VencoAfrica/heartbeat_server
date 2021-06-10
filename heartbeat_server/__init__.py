@@ -112,7 +112,7 @@ async def send_data(data, reader, writer, logger=None):
         response = await read_response(reader, logger=logger, timeout=3.0)
         heartbeat = HeartbeartData(response)
         if heartbeat.is_valid():
-            send_heartbeat_reply(heartbeat, writer, logger)
+            await send_heartbeat_reply(heartbeat, writer, logger)
             response = bytearray()
 
         tries += 1
