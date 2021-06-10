@@ -150,6 +150,7 @@ async def serve_requests_from_frappe(
     config = deps['config']
     logger = deps['logger']
     request_queue = config.get('request_queue', DEFAULT_REQUEST_QUEUE)
+    keep_alive = [('keep alive', '0.2.0')]
     logger.info("Waiting for frappe requests...")
 
     async def frappe_server(shared):
@@ -157,17 +158,19 @@ async def serve_requests_from_frappe(
         try:
             redis = await get_redis(deps)
             while shared['can_pool'] or deps['count'] == count:
-                req = await redis.blpop(request_queue, timeout=3*60)
+
+                await test_reads(reader, writer, logger, keep_alive)
+
+                req = await redis.blpop(request_queue, timeout=25)
                 splitted = req[1].split(b'|', 1) if req else []
                 if len(splitted) != 2:
                     continue
+
                 aux, data = json.loads(splitted[0]), splitted[1]
                 key = aux['key']
                 to_send = prep_data_from_aux(
                     aux=aux, meter_no=aux['meter'], data=data
                 )
-
-                await test_reads(reader, writer, logger)
 
                 logger.info(
                     "...handling frappe request %s \n(Original: %s)",
@@ -179,7 +182,9 @@ async def serve_requests_from_frappe(
                     "...frappe response for key %s: %s", key, response.hex()
                 )
                 await push_to_queue(key, response or '', deps)
-            logger.info("Done waiting for frappe requests...")
+
+            cond = [shared['can_pool'], deps['count'] == count]
+            logger.info("Done waiting for frappe requests... %s", cond)
         except:
             if key:
                 await push_to_queue(key, '', deps)
@@ -199,8 +204,8 @@ async def serve_requests_from_frappe(
     await server_task
 
 
-async def test_reads(reader, writer, logger):
-    codes = [
+async def test_reads(reader, writer, logger, codes=None):
+    codes = codes or [
         ('voltage', '32.7.0.255'), ('time', '0.9.1.255'),
         ('date', '0.9.2.255'), 
     ]
