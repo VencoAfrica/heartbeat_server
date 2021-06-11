@@ -20,6 +20,10 @@ DEFAULT_PASSWORD = b"33333333"
 DEFAULT_RANDOM_NUMBER = 31
 DEFAULT_REQUEST_QUEUE = 'request_queue'
 
+keep_alive = [('keep alive', '0.2.0')]
+
+class DoneWaiting(Exception): pass
+
 
 async def raise_after(timeout):
     ''' raise `asyncio.TimeoutError` after specified time in seconds '''
@@ -36,19 +40,14 @@ def load_config(filename="config.json", deps=None):
 
 async def redis_pool(url, deps=None):
     # Redis client bound to pool of connections (auto-reconnecting).
-    deps = {} if deps is None else deps
-    if 'redis' in deps:
-        return deps['redis']
+    async with deps['redis_lock']:
+        deps = {} if deps is None else deps
+        if 'redis' in deps:
+            return deps['redis']
 
-    conn = await aioredis.create_redis_pool(url, timeout=10)
-
-    if 'config' in deps:
-        # clear past requests
-        request_queue = deps['config'].get('request_queue', DEFAULT_REQUEST_QUEUE)
-        conn.ltrim(request_queue, 1, 0)
-
-    deps['redis'] = conn
-    return conn
+        conn = await aioredis.create_redis_pool(url, timeout=10)
+        deps['redis'] = conn
+        return conn
 
 async def get_redis(deps):
     url = deps['config']['redis_server_url']
@@ -145,21 +144,23 @@ def prep_data_from_aux(aux, meter_no, data):
     )
 
 async def serve_requests_from_frappe(
-    reader: StreamReader, writer: StreamWriter, count, deps, timeout=60*5
+    reader, writer, count, deps, meter_number, timeout=60*5
 ):
     config = deps['config']
     logger = deps['logger']
     request_queue = config.get('request_queue', DEFAULT_REQUEST_QUEUE)
-    keep_alive = [('keep alive', '0.2.0')]
+    request_queue = '%s|%s' % (request_queue, meter_number)
     logger.info("Waiting for frappe requests...")
 
     async def frappe_server(shared):
         key = None
         try:
             redis = await get_redis(deps)
-            while shared['can_pool'] or deps['count'] == count:
+            can_pool = shared['can_pool']
+            is_latest_heartbeat = deps['counts'][meter_number] == count
+            while is_latest_heartbeat:
 
-                await test_reads(reader, writer, logger, keep_alive)
+                await test_reads(reader, writer, meter_number, None, keep_alive)
 
                 req = await redis.blpop(request_queue, timeout=25)
                 splitted = req[1].split(b'|', 1) if req else []
@@ -183,12 +184,16 @@ async def serve_requests_from_frappe(
                 )
                 await push_to_queue(key, response or '', deps)
 
-            cond = [shared['can_pool'], deps['count'] == count]
-            logger.info("Done waiting for frappe requests... %s", cond)
-        except:
+            cond = [can_pool, is_latest_heartbeat]
+            msg = "Done waiting for frappe requests... %s\n" % cond
+            logger.info(msg)
+            key = None
+            raise DoneWaiting(msg)
+        except Exception as e:
             if key:
                 await push_to_queue(key, '', deps)
-            logger.exception('error while serving request from frappe')
+            if not isinstance(e, DoneWaiting):
+                logger.exception('error while serving request from frappe\n')
             raise
 
     shared = {'can_pool': True}
@@ -204,7 +209,7 @@ async def serve_requests_from_frappe(
     await server_task
 
 
-async def test_reads(reader, writer, logger, codes=None):
+async def test_reads(reader, writer, meter, logger=None, codes=None):
     codes = codes or [
         ('voltage', '32.7.0.255'), ('time', '0.9.1.255'),
         ('date', '0.9.2.255'), 
@@ -213,21 +218,24 @@ async def test_reads(reader, writer, logger, codes=None):
         msg = CommandMessage.for_single_read(code).to_bytes()
         PA, password = DEFAULT_PASSWORD_LEVEL, DEFAULT_PASSWORD
         to_send = prep_data(
-            '179000222382', PA, DEFAULT_RANDOM_NUMBER, password, msg
+            meter, PA, DEFAULT_RANDOM_NUMBER, password, msg
         )
-        logger.info("Sending Data [%s %r]: %s", label, (PA, password), to_send.hex())
+        if logger:
+            logger.info(
+                "Sending Data [%s %r]: %s", label, (PA, password), to_send.hex())
         try:
             response = await send_data(to_send, reader, writer, logger)
-            logger.info("write response [%s %r]: %s", label, (PA, password), response.hex())
+            if logger:
+                logger.info(
+                    "write response [%s %r]: %s", label, (PA, password), response.hex())
         except BrokenPipeError:
             # avoid atempts to write here
             writer.close()
-            logger.exception("broken pipe on time read")
+            if logger:
+                logger.exception("broken pipe on time read")
 
 
 async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
-    deps['count'] += 1
-    count = deps['count']
     logger = deps['logger']
     peername = writer.get_extra_info('peername')
     data = await HeartbeartData.read_heartbeat(reader, logger)
@@ -242,17 +250,27 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
         logger.exception("badly formed heartbeat. cannot log or respond!")
 
     await send_heartbeat_reply(parsed, writer, logger)
-    await test_reads(reader, writer, logger)
 
     if to_push:
         to_push['peername'] = peername
+
         device_details = to_push['device_details']
+
+        await test_reads(reader, writer, device_details, logger, keep_alive)
+
         to_push = json.dumps(to_push, indent=2)
         logger.info("Parsed: %s", to_push)
         # push heartbeat
         await push_to_queue(device_details, to_push, deps)
+
         # serve requests from frappe
-        await serve_requests_from_frappe(reader, writer, count, deps, timeout=4*60)
+        async with deps['counts_lock']:
+            count = deps['counts'].setdefault(device_details, 0)
+            count += 1
+            deps['counts'][device_details] = count
+        await serve_requests_from_frappe(
+            reader, writer, count, deps, device_details, timeout=4*60
+        )
 
     writer.close()
 
@@ -281,7 +299,9 @@ async def main(deps=None):
  
     deps['logger'] = logger
     deps['config'] = config
-    deps['count'] = 0
+    deps['counts'] = {}
+    deps['counts_lock'] = asyncio.Lock()
+    deps['redis_lock'] = asyncio.Lock()
 
     host = config.get('tcp', {}).get('host', '0.0.0.0')
     port = config.get('tcp', {}).get('port', '18901')

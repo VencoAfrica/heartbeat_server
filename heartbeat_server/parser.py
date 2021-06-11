@@ -73,6 +73,8 @@ class HeartbeartData:
     
     def get_parsed(self):
         ''' parse data to be put in queue. Can raise exception '''
+        if not self.is_valid():
+            return {}
         return {
             "version_number": self.version_number.hex(),
             "source_address": self.source_address.hex(),
