@@ -156,9 +156,15 @@ async def serve_requests_from_frappe(
         key = None
         try:
             redis = await get_redis(deps)
-            can_pool = shared['can_pool']
-            is_latest_heartbeat = deps['counts'][meter_number] == count
-            while is_latest_heartbeat:
+            can_pool = None
+            is_latest_heartbeat = None
+            while True:
+                is_latest_heartbeat = deps['counts'][meter_number] == count
+                if not is_latest_heartbeat:
+                    break
+                can_pool = shared['can_pool']
+                if not can_pool and not is_latest_heartbeat:
+                    break
 
                 await test_reads(reader, writer, meter_number, None, keep_alive)
 
