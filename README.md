@@ -14,7 +14,13 @@ To use the server, follow the steps below:
 ```
 > python3 -m venv env
 > . env/bin/activate
+
 ```
+Install Supervisor
+apt-get install supervisor
+
+Restart Supervisor
+service supervisor restart
 
 3.  Install app:
 ```
