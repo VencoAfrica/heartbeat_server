@@ -17,10 +17,14 @@ To use the server, follow the steps below:
 
 ```
 Install Supervisor
+```
 apt-get install supervisor
+```
 
 Restart Supervisor
+```
 service supervisor restart
+```
 
 3.  Install app:
 ```
