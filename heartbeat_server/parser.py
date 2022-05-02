@@ -4,9 +4,13 @@ from datetime import datetime
 from logging import Logger
 
 
-class HeartbeartData:
+class HeartbeatData:
     def __init__(self, data):
-        self._data = data
+        if isinstance(data, (bytes, bytearray)) and \
+               data.startswith(b'\x00'):
+            self._data = data
+        else:
+            raise Exception("Badly formed heartbeat")
     
     @property
     def version_number(self):
@@ -59,8 +63,7 @@ class HeartbeartData:
 
     @property
     def address(self):
-        return self._data[17 + self.device_details_length_int + 1:
-                          17 + self.device_details_length_int + 5]
+        return self._data[17 + self.device_details_length_int + 1:]
 
     @property
     def output_data(self):
@@ -70,11 +73,8 @@ class HeartbeartData:
                 self.source_address + 
                 self.fixed_format_length + 
                 self.fixed_format)
-    
-    def get_parsed(self):
-        ''' parse data to be put in queue. Can raise exception '''
-        if not self.is_valid():
-            return {}
+
+    def parse(self) -> dict:
         return {
             "version_number": self.version_number.hex(),
             "source_address": self.source_address.hex(),
@@ -96,22 +96,6 @@ class HeartbeartData:
             frame_length.to_bytes(frame_length_size, 'big'),
             self.fixed_format
         ])
-
-    def is_valid(self):
-        if not isinstance(self._data, (bytes, bytearray)):
-            return False
-
-        if not self._data.startswith(b'\x00'):
-            return False
-
-        try:
-            for val in self.get_parsed().values():
-                if not val:
-                    return False
-        except:
-            return False
-
-        return True
 
     @staticmethod
     async def read_heartbeat(reader: StreamReader, logger: Logger = None):
@@ -176,12 +160,13 @@ def get_mac(random_no, password, low_or_high='L'):
     crc = CRC(b'\xA5', arr)
     return (int.from_bytes(crc, 'big') + 0x33).to_bytes(2, 'big')[-1:]
 
-def prep_data(meter_no, pass_lvl, random_no, passw, data):
+
+def prep_data(meter_no, pass_lvl: int, random_no, passw, data):
     if not isinstance(random_no, bytes):
         random_no = (int(str(random_no))).to_bytes(1, 'big')
 
     if not isinstance(pass_lvl, bytes):
-        pass_lvl = (int(str(pass_lvl)) + 0x33).to_bytes(1, 'big')
+        pass_lvl = (pass_lvl + 0x33).to_bytes(1, 'big')
 
     random_no_padded = (int.from_bytes(
         random_no, 'big') + 0x33).to_bytes(1, 'big')

@@ -12,10 +12,10 @@ import aioredis
 from iec62056_21.messages import CommandMessage
 
 from heartbeat_server.logger import get_logger
-from heartbeat_server.parser import HeartbeartData, prep_data
+from heartbeat_server.parser import HeartbeatData, prep_data
 
 
-DEFAULT_PASSWORD_LEVEL =  0x01
+DEFAULT_PASSWORD_LEVEL = 0x01
 DEFAULT_PASSWORD = b"33333333"
 DEFAULT_RANDOM_NUMBER = 31
 DEFAULT_REQUEST_QUEUE = 'request_queue'
@@ -84,19 +84,13 @@ async def read_response(reader: StreamReader, end_chars=None,
             logger.exception("timeout reading response after %ss", timeout)
     return data
 
-async def send_heartbeat_reply(heartbeat, writer, logger=None):
-    if not isinstance(heartbeat, HeartbeartData):
-        heartbeat = HeartbeartData(heartbeat)
 
-    if heartbeat.is_valid():
-        reply = heartbeat.get_reply()
-        if logger:
-            logger.info("Sending Server Reply: %s", reply.hex())
-        await asyncio.sleep(1)
-        writer.write(reply)
-    else:
-        if logger:
-            logger.info("Invalid heartbeat: %s", heartbeat._data)
+async def send_heartbeat_reply(heartbeat: HeartbeatData, writer, logger=None):
+    reply = heartbeat.get_reply()
+    if logger:
+        logger.info("Sending Server Reply: %s", reply.hex())
+    await asyncio.sleep(1)
+    writer.write(reply)
 
 async def send_data(data, reader, writer, logger=None):
     tries = 0
@@ -109,7 +103,7 @@ async def send_data(data, reader, writer, logger=None):
 
         await asyncio.sleep(1)
         response = await read_response(reader, logger=logger, timeout=3.0)
-        heartbeat = HeartbeartData(response)
+        heartbeat = HeartbeatData(response)
         if heartbeat.is_valid():
             await send_heartbeat_reply(heartbeat, writer, logger)
             response = bytearray()
@@ -222,18 +216,18 @@ async def test_reads(reader, writer, meter, logger=None, codes=None):
     ]
     for label, code in codes:
         msg = CommandMessage.for_single_read(code).to_bytes()
-        PA, password = DEFAULT_PASSWORD_LEVEL, DEFAULT_PASSWORD
+        pass_lvl, password = DEFAULT_PASSWORD_LEVEL, DEFAULT_PASSWORD
         to_send = prep_data(
-            meter, PA, DEFAULT_RANDOM_NUMBER, password, msg
+            meter, pass_lvl, DEFAULT_RANDOM_NUMBER, password, msg # check DEFAULT_RANDOM_NO
         )
         if logger:
             logger.info(
-                "Sending Data [%s %r]: %s", label, (PA, password), to_send.hex())
+                "Sending Data [%s %r]: %s", label, (pass_lvl, password), to_send.hex())
         try:
             response = await send_data(to_send, reader, writer, logger)
             if logger:
                 logger.info(
-                    "write response [%s %r]: %s", label, (PA, password), response.hex())
+                    "write response [%s %r]: %s", label, (pass_lvl, password), response.hex())
         except BrokenPipeError:
             # avoid atempts to write here
             writer.close()
@@ -244,30 +238,30 @@ async def test_reads(reader, writer, meter, logger=None, codes=None):
 async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
     logger = deps['logger']
     peername = writer.get_extra_info('peername')
-    data = await HeartbeartData.read_heartbeat(reader, logger)
+    data = await HeartbeatData.read_heartbeat(reader, logger)
 
     logger.info("Received %s", b''.join(data).hex())
-    to_push = None
     parsed = None
+    heartbeat = None
+
     try:
-        parsed = HeartbeartData(data[0])
-        to_push = parsed.get_parsed()
-    except:
-        logger.exception("badly formed heartbeat. cannot log or respond!")
+        heartbeat = HeartbeatData(data[0])
+        parsed = heartbeat.parse()
+    except Exception as e:
+        logger.exception(e)
 
-    await send_heartbeat_reply(parsed, writer, logger)
+    await send_heartbeat_reply(heartbeat, writer, logger)
 
-    if to_push:
-        to_push['peername'] = peername
-
-        device_details = to_push['device_details']
+    if parsed:
+        parsed['peername'] = peername
+        device_details = parsed['device_details']
 
         await test_reads(reader, writer, device_details, logger, keep_alive)
 
-        to_push = json.dumps(to_push, indent=2)
-        logger.info("Parsed: %s", to_push)
+        parsed = json.dumps(parsed, indent=2)
+        logger.info("Parsed: %s", parsed)
         # push heartbeat
-        await push_to_queue(device_details, to_push, deps)
+        await push_to_queue(device_details, parsed, deps)
 
         # serve requests from frappe
         async with deps['counts_lock']:
@@ -279,10 +273,6 @@ async def server_handler(reader: StreamReader, writer: StreamWriter, deps):
         )
 
     writer.close()
-
-
-
-
 
 
 def wrapper(deps):

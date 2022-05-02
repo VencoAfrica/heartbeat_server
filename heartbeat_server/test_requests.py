@@ -14,6 +14,7 @@ test_request = b'{"key": "%s", "meter": "179000222382", "PA": "3", "PASSWORD": "
 
 redis_queue = 'test_request_queue'
 redis_url = 'redis://veros:bb5qFU9xFMPCWpEJoKOe60zSN1e6LOkT@redis-10661.c259.us-central1-2.gce.cloud.redislabs.com:10661'
+# redis_url = 'redis://127.0.0.1:6379'
 
 address = '54.197.44.252'
 # address = '127.0.0.1'
@@ -22,7 +23,7 @@ port = 18901
 no_of_heartbeats = 1000
 
 
-def get_key():
+def generate_key():
     return ''.join(
         [
             random.choice(string.ascii_letters+string.digits) \
@@ -64,14 +65,14 @@ def send_test_request(idx, redis_conn, flags):
     start = time.time()
     print('starting test_request, thread no.%s ' % idx)
 
-    key = get_key()
+    key = generate_key()
     key_bytes = bytes(key, encoding='utf-8')
     redis_conn.lpush(redis_queue, test_request % key_bytes)
     response = None
 
     while not flags['stop']:
         try:
-            response = redis_conn.blpop(key, 1)
+            response = redis_conn.blpop(redis_queue, 1)
             if response is None:
                 continue
         except Exception as e:
