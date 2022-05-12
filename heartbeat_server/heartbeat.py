@@ -100,6 +100,14 @@ class Heartbeat:
     def is_valid(self):
         return not all(not val for val in self.parse().values())
 
+    async def send_heartbeat_reply(self,
+                                   writer: StreamWriter,
+                                   logger=None):
+        reply = self.get_reply()
+        if logger:
+            logger.info("Sending Server Reply: %s", reply.hex())
+        writer.write(reply)
+
     @staticmethod
     async def read_heartbeat(reader: StreamReader,
                              logger: Logger = None):
@@ -115,13 +123,5 @@ class Heartbeat:
             if logger is not None:
                 logger.exception("Timeout reading heartbeat")
         return Heartbeat(data)
-
-    @staticmethod
-    async def send_heartbeat_reply(writer: StreamWriter, logger=None):
-        reply = Heartbeat.get_reply()
-        if logger:
-            logger.info("Sending Server Reply: %s", reply.hex())
-        await asyncio.sleep(1)
-        writer.write(reply)
 
 

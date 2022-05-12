@@ -1,6 +1,6 @@
 import json
 import asyncio
-from .redis import Redis
+from .hs_redis import Redis
 from . import Heartbeat
 
 from logging import Logger
@@ -119,7 +119,7 @@ async def send_data(data, reader, writer, logger=None):
         response = await read_response(reader, logger=logger, timeout=3.0)
         heartbeat = Heartbeat(response)
         if heartbeat.is_valid():
-            await Heartbeat.send_heartbeat_reply(heartbeat, writer, logger)
+            await heartbeat.send_heartbeat_reply(writer, logger)
             response = bytearray()
         tries += 1
     return response

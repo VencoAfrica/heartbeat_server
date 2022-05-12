@@ -11,10 +11,10 @@ heartbeat = b'\x00\x01\x00\x01\x00\x66\x00\x1E\x0F\xC0\x00\x00\x00\x02\x02\x0A\x
 test_request = b'{"key": "%s", "meter": "179000222382", "PA": "3", "PASSWORD": "11111111", "RANDOM": 31}|\x01R1\x020.9.2.255()\x03D'
 
 redis_queue = 'test_request_queue'
-# redis_url = 'hsredis://veros:bb5qFU9xFMPCWpEJoKOe60zSN1e6LOkT@hsredis-10661.c259.us-central1-2.gce.cloud.redislabs.com:10661'
-redis_url = 'hsredis://127.0.0.1:6379'
+# redis_url = 'redis://veros:bb5qFU9xFMPCWpEJoKOe60zSN1e6LOkT@redis-10661.c259.us-central1-2.gce.cloud.redislabs.com:10661'
+redis_url = 'redis://127.0.0.1:6379'
 
-#address = '54.197.44.252'
+# address = '54.197.44.252'
 address = '127.0.0.1'
 port = 18902
 
