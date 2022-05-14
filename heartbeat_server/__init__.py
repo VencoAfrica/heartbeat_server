@@ -2,11 +2,10 @@ import asyncio
 import json
 import os
 
-
+from logging import Logger
 from .logger import get_logger
 from .heartbeat import Heartbeat
-from .hs_redis import Redis
-from .hes import hes_handler
+from .hes import process_hes_message
 from .ccu import ccu_handler
 
 
@@ -15,24 +14,33 @@ async def heartbeat_server(params=None):
         params['logger'] \
             = get_logger(params.get('log'))
 
-    host = params.get('tcp', {}).get('host', '0.0.0.0')
-    port = params.get('tcp', {}).get('port', '18901')
+    run_server(params.get('ccu', {}),
+               params.get('hes', {}),
+               ccu, params['logger'])
 
-    redis = Redis(params['redis'])
-    await redis.get_redis_pool()
 
-    server = await asyncio.start_server(wrapper(params, redis), host, port)
+def run_server(ccu_params: dict,
+               hes_params: dict,
+               callback,
+               logger: Logger):
+    host = ccu_params.get('host', '0.0.0.0')
+    port = ccu_params.get('port', '18901')
+    name = ccu_params.get('name', '')
+
+    server = await asyncio.start_server(
+        callback(hes_params, logger),
+        host, port)
     addr = server.sockets[0].getsockname()
 
-    if params['logger']:
-        params['logger'].info('Serving on %s', addr)
+    if ccu_params['logger']:
+        ccu_params['logger'].info(f'Waiting for {name} on {addr}')
 
     try:
         async with server:
             await server.serve_forever()
-    except:
-        if params['logger']:
-            params['logger'].exception("Server loop exception")
+    except Exception:
+        if ccu_params['logger']:
+            ccu_params['logger'].exception("Server loop exception")
         raise
 
 
@@ -45,7 +53,8 @@ def load_config(filename="config.json"):
               "('%s' Not Found)" % filename)
 
 
-def wrapper(params: dict, redis: Redis):
+def ccu(hes_params: dict, logger: Logger):
     async def handler(reader, writer):
-        await ccu_handler(reader, writer, redis, params)
+        await ccu_handler(reader, writer, hes_params, logger)
     return handler
+

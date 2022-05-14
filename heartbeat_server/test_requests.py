@@ -7,6 +7,8 @@ import threading
 
 import redis
 
+from iec62056_21.messages import CommandMessage
+
 heartbeat = b'\x00\x01\x00\x01\x00\x66\x00\x1E\x0F\xC0\x00\x00\x00\x02\x02\x0A\x10\x4D\x54\x52\x4B\x30\x31\x37\x39\x30\x30\x30\x31\x33\x32\x30\x33\x06\x00\x00\x00\x00'
 test_request = b'{"key": "%s", "meter": "179000222382", "PA": "3", "PASSWORD": "11111111", "RANDOM": 31}|\x01R1\x020.9.2.255()\x03D'
 
@@ -128,3 +130,28 @@ if __name__ == '__main__':
             thread.join()
 
     print('\nall done')
+
+
+async def test_reads(reader, writer, meter, logger=None, codes=None):
+    codes = codes or [
+        ('voltage', '32.7.0.255'), ('time', '0.9.1.255'),
+        ('date', '0.9.2.255'),
+    ]
+    for label, code in codes:
+        msg = CommandMessage.for_single_read(code).to_bytes()
+        PA, password = DEFAULT_PASSWORD_LEVEL, DEFAULT_PASSWORD
+        to_send = prep_data(
+            meter, PA, DEFAULT_RANDOM_NUMBER, password, msg
+        )
+        if logger:
+            logger.info(
+                "Sending Data [%s %r]: %s", label, (PA, password), to_send.hex())
+        try:
+            response = await send_data(to_send, reader, writer, logger)
+            if logger:
+                logger.info(
+                    "write response [%s %r]: %s", label, (PA, password), response.hex())
+        except BrokenPipeError:
+            writer.close()
+            if logger:
+                logger.exception("broken pipe on time read")

@@ -1,47 +1,33 @@
 import json
-import asyncio
-from .hs_redis import Redis
-from . import Heartbeat
-
-from logging import Logger
-from asyncio.streams import StreamReader
-from iec62056_21.messages import CommandMessage
 
 DEFAULT_PASSWORD_LEVEL = 0x01
 DEFAULT_PASSWORD = b"33333333"
 DEFAULT_RANDOM_NUMBER = 31
 
 
-async def hes_handler(reader, writer, res,
-                      sub_redis: Redis):
-    split = res[1].split(b'|', 1) if res else []
+async def process_hes_message(msg):
+    """
+    This function handles messages received from
+    the HES and to be sent to a CCU.
+    These messages will have the following format:
+    ---
+    b'{"key": "%s", "meter": "179000222382", "PA": "3", "PASSWORD": "11111111", "RANDOM": 31}
+    |
+    \x01R1\x020.9.2.255()\x03D'
+    ---
+
+    """
+    split = msg.split(b'|', 1) if msg else []
     aux, data = json.loads(split[0]), split[1]
-    key = aux['key']
-    to_send = prep_data_from_aux(
+    return prep_data_from_aux(
         aux=aux, meter_no=aux['meter'], data=data
     )
-    response = await send_data(to_send, reader, writer)
-    await sub_redis.publish('RESPONSE: {}|{}'.format(key, response))
 
 
 def prep_data_from_aux(aux, meter_no, data):
     password_level = aux.get("PA", DEFAULT_PASSWORD_LEVEL)
     password = aux.get("PASSWORD", DEFAULT_PASSWORD)
     random_number = aux.get("RANDOM", DEFAULT_RANDOM_NUMBER)
-
-    return prep_data(
-        meter_no=meter_no,
-        pass_lvl=password_level,
-        random_no=random_number,
-        passw=password,
-        data=data
-    )
-
-
-def prep_data_from_config(config, meter_no, data):
-    password_level = config.get("password_level", DEFAULT_PASSWORD_LEVEL)
-    password = config.get("password", DEFAULT_PASSWORD)
-    random_number = config.get("random_number", DEFAULT_RANDOM_NUMBER)
 
     return prep_data(
         meter_no=meter_no,
@@ -79,50 +65,6 @@ def prep_data(meter_no, pass_lvl, random_no, passw, data):
     out += data_sum.to_bytes(2, 'big')[-1:]
     out += bytearray([0x16])
     return out
-
-
-async def test_reads(reader, writer, meter, logger=None, codes=None):
-    codes = codes or [
-        ('voltage', '32.7.0.255'), ('time', '0.9.1.255'),
-        ('date', '0.9.2.255'),
-    ]
-    for label, code in codes:
-        msg = CommandMessage.for_single_read(code).to_bytes()
-        PA, password = DEFAULT_PASSWORD_LEVEL, DEFAULT_PASSWORD
-        to_send = prep_data(
-            meter, PA, DEFAULT_RANDOM_NUMBER, password, msg
-        )
-        if logger:
-            logger.info(
-                "Sending Data [%s %r]: %s", label, (PA, password), to_send.hex())
-        try:
-            response = await send_data(to_send, reader, writer, logger)
-            if logger:
-                logger.info(
-                    "write response [%s %r]: %s", label, (PA, password), response.hex())
-        except BrokenPipeError:
-            writer.close()
-            if logger:
-                logger.exception("broken pipe on time read")
-
-
-async def send_data(data, reader, writer, logger=None):
-    tries = 0
-    response = bytearray()
-    while not response and tries < 3:
-        if logger is not None:
-            logger.info("Trying: %s", tries + 1)
-        await asyncio.sleep(1)
-        writer.write(data)
-
-        await asyncio.sleep(1)
-        response = await read_response(reader, logger=logger, timeout=3.0)
-        heartbeat = Heartbeat(response)
-        if heartbeat.is_valid():
-            await heartbeat.send_heartbeat_reply(writer, logger)
-            response = bytearray()
-        tries += 1
-    return response
 
 
 def CRC(crc, buf):
@@ -166,17 +108,4 @@ def get_mac(random_no, password, low_or_high='L'):
     return (int.from_bytes(crc, 'big') + 0x33).to_bytes(2, 'big')[-1:]
 
 
-async def read_response(reader: StreamReader, end_chars=None,
-                        buf_size=1, timeout=10.0, logger: Logger = None):
-    data = bytearray()
-    end_chars = end_chars if end_chars is not None else []
-    try:
-        while True:
-            part = await asyncio.wait_for(reader.read(buf_size), timeout=timeout)
-            data += part
-            if not part or part in end_chars:
-                break
-    except asyncio.TimeoutError:
-        if logger is not None:
-            logger.exception("timeout reading response after %ss", timeout)
-    return data
+
