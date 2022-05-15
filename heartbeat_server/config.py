@@ -8,12 +8,7 @@ config_content = {
     },
     "udp": {
         "port": 18902,
-    },
-    "hsredis": {
-        "server_url": "hsredis://localhost",
-        "password": "abcdefghi",
-        "request_queue": "test_request_queue",
-    },
+    }
 }
 
 

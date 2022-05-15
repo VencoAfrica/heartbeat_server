@@ -3,7 +3,7 @@ import random
 import string
 
 from asyncio.streams import StreamWriter, StreamReader
-from test_utils import read
+from iec62056_21.messages import CommandMessage
 
 
 async def start_mock_hes_server():
@@ -22,25 +22,22 @@ async def start_mock_hes_server():
 
 async def handle_heartbeat_server(reader: StreamReader,
                                   writer: StreamWriter):
-    response = await read(reader)
-    print(f'Obtained heartbeat {response}')
+    response = await reader.read(100)
+    print(f'\n<- Obtained {response}')
 
-    # bytearray(b'\x00\x01\x00\x01\x00f\x00\x1e\x0f\xc0\x00\x00\x00\x02\x02\n\x10MTRK017900013203\x06\x00\x00\x00\x00')
     if isinstance(response, (bytes, bytearray)) and \
             response.startswith(b'\x00'):
-        # processing to get meter data
-        ccu_request = generate_ccu_data_request(writer)
-        print(f'Sending to Heart beat server {ccu_request}')
+        # ** processing to get meter data **
+        ccu_request = generate_ccu_data_request()
+        print(f'\n-> Sending {ccu_request}')
         writer.write(ccu_request)
-
-    writer.close()
-    # elif ():  # reading
-    #     pass
+        await writer.drain()
 
 
-def generate_ccu_data_request(writer: StreamWriter):
-    test_request = b'{"key": "%s", "meter": "179000222382", "PA": "3", "PASSWORD": "11111111", "RANDOM": ' \
-                   b'31}|\x01R1\x020.9.2.255()\x03D '
+def generate_ccu_data_request():
+    test_read = test_reads('date')
+    test_request = b'{"key": "%s", "meter": "179000222382", "PA": "3", "PASSWORD": "11111111", "RANDOM": 31}|'\
+                   + test_read
 
     key = generate_key()
     key_bytes = bytes(key, encoding='utf-8')
@@ -54,6 +51,15 @@ def generate_key():
             for _ in range(20)
         ]
     )
+
+
+def test_reads(label):
+    codes = {
+        'voltage': '32.7.0.255',
+        'time': '0.9.1.255',
+        'date': '0.9.2.255',
+    }
+    return CommandMessage.for_single_read(codes[label]).to_bytes()
 
 
 if __name__ == '__main__':

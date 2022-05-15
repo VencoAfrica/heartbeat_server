@@ -1,7 +1,5 @@
-import asyncio
 from asyncio.streams import StreamReader, StreamWriter
 from datetime import datetime
-from logging import Logger
 
 
 class Heartbeat:
@@ -113,19 +111,14 @@ class Heartbeat:
         writer.write(reply)
 
     @staticmethod
-    async def read_heartbeat(reader: StreamReader,
-                             logger: Logger = None):
+    async def read_heartbeat(reader: StreamReader):
         data = bytearray()
-        try:
-            part = await reader.read(8)
-            data += part
-            frame_length = part[-2:]
-            frame_length_int = int.from_bytes(frame_length, 'big')
-            part = await reader.read(frame_length_int)
-            data += part
-        except asyncio.TimeoutError:
-            if logger is not None:
-                logger.exception("Timeout reading heartbeat")
+        part = await reader.read(8)
+        data += part
+        frame_length = part[-2:]
+        frame_length_int = int.from_bytes(frame_length, 'big')
+        part = await reader.read(frame_length_int)
+        data += part
         return Heartbeat(data)
 
 
