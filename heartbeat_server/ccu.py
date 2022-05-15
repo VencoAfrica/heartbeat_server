@@ -17,23 +17,28 @@ async def ccu_handler(reader: StreamReader,
     hes_port = hes_params.get('port', '18902')
 
     heartbeat = await Heartbeat.read_heartbeat(reader, logger)
+    print(f'Received heartbeat {heartbeat}')
     await heartbeat.send_heartbeat_reply(writer, logger)
-    res = await send_to_hes(hes_address,
-                            hes_port,
-                            json.dumps(heartbeat.parse()))
-    ccu_payload = await process_hes_message(res)
-    ccu_reading = await send_to_ccu(ccu_payload, reader,  writer, logger)
-    ccu_reading_response = await send_to_hes(hes_address,
-                                             hes_port,
-                                             ccu_reading.decode())
-    logger.info(f'CCU Reading {ccu_reading_response}')
+    response = await send_to_hes(hes_address,
+                                 hes_port,
+                                 heartbeat.data)
+    if response:
+        ccu_payload = await process_hes_message(response)
+        ccu_reading = await send_to_ccu(ccu_payload, reader,  writer, logger)
+        ccu_reading_response = await send_to_hes(hes_address,
+                                                 hes_port,
+                                                 ccu_reading)
+        logger.info(f'CCU Reading {ccu_reading_response}')
+    else:
+        raise Exception(f'No response from HES')
     writer.close()
 
 
 async def send_to_hes(address: str,
                       port: int,
-                      msg: str):
-    await send(address, port, msg)
+                      msg: bytearray):
+    print(f'Sending to HES {msg}')
+    return await send(address, port, msg)
 
 
 async def send_to_ccu(data, reader, writer, logger=None):
@@ -46,7 +51,7 @@ async def send_to_ccu(data, reader, writer, logger=None):
         writer.write(data)
 
         await asyncio.sleep(1)
-        response = await read_response(reader, logger=logger, timeout=3.0)
+        response = await read_response(reader, logger=logger)
         heartbeat = Heartbeat(response)
         if heartbeat.is_valid():
             await heartbeat.send_heartbeat_reply(writer, logger)
@@ -56,7 +61,7 @@ async def send_to_ccu(data, reader, writer, logger=None):
 
 
 async def read_response(reader: StreamReader, end_chars=None,
-                        buf_size=1, timeout=10.0, logger: Logger = None):
+                        buf_size=1, timeout=100.0, logger: Logger = None):
     data = bytearray()
     end_chars = end_chars if end_chars is not None else []
     try:

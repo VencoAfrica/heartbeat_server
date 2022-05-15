@@ -4,7 +4,7 @@ import select
 
 async def send(address: str,
                port: int,
-               msg: str):
+               msg: bytes):
     got = None
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

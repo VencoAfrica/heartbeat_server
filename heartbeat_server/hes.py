@@ -15,7 +15,6 @@ async def process_hes_message(msg):
     |
     \x01R1\x020.9.2.255()\x03D'
     ---
-
     """
     split = msg.split(b'|', 1) if msg else []
     aux, data = json.loads(split[0]), split[1]

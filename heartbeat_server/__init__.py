@@ -11,18 +11,17 @@ from .ccu import ccu_handler
 
 async def heartbeat_server(params=None):
     if params.get('log'):
-        params['logger'] \
-            = get_logger(params.get('log'))
+        logger = get_logger(params.get('log'))
 
-    run_server(params.get('ccu', {}),
-               params.get('hes', {}),
-               ccu, params['logger'])
+    await run_server(params.get('ccu', {}),
+                     params.get('hes', {}),
+                     ccu, logger)
 
 
-def run_server(ccu_params: dict,
-               hes_params: dict,
-               callback,
-               logger: Logger):
+async def run_server(ccu_params: dict,
+                     hes_params: dict,
+                     callback,
+                     logger: Logger):
     host = ccu_params.get('host', '0.0.0.0')
     port = ccu_params.get('port', '18901')
     name = ccu_params.get('name', '')
@@ -32,15 +31,15 @@ def run_server(ccu_params: dict,
         host, port)
     addr = server.sockets[0].getsockname()
 
-    if ccu_params['logger']:
-        ccu_params['logger'].info(f'Waiting for {name} on {addr}')
+    if logger:
+        logger.info(f'Waiting for {name} on {addr}')
 
     try:
         async with server:
             await server.serve_forever()
     except Exception:
-        if ccu_params['logger']:
-            ccu_params['logger'].exception("Server loop exception")
+        if logger:
+            logger.exception("Server loop exception")
         raise
 
 

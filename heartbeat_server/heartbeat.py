@@ -13,6 +13,10 @@ class Heartbeat:
             raise Exception("Badly formed heartbeat")
 
     @property
+    def data(self):
+        return self._data
+
+    @property
     def version_number(self):
         return self._data[0:2]
 
