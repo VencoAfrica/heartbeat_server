@@ -1,0 +1,17 @@
+{
+  "ccu": {
+    "host": "0.0.0.0",
+    "port": 18901,
+    "name": "ccu"
+  },
+  "hes": {
+    "host": "0.0.0.0",
+    "port": 18902,
+    "name": "hes"
+  },
+  "log": {
+    "file": "app.log",
+    "level": 10,
+    "_comment": "logging.DEBUG"
+  }
+}
