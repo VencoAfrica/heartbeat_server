@@ -1,39 +1,20 @@
 import json
 
+from random import randrange
+
 DEFAULT_PASSWORD_LEVEL = 0x01
 DEFAULT_PASSWORD = b"33333333"
 DEFAULT_RANDOM_NUMBER = 31
 
 
-async def process_hes_message(msg):
-    """
-    This function handles messages received from
-    the HES and to be sent to a CCU.
-    These messages will have the following format:
-    ---
-    b'{"key": "%s", "meter": "179000222382", "PA": "3", "PASSWORD": "11111111", "RANDOM": 31}
-    |
-    \x01R1\x020.9.2.255()\x03D'
-    ---
-    """
-    split = msg.split(b'|', 1) if msg else []
-    aux, data = json.loads(split[0]), split[1]
-    return prep_data_from_aux(
-        aux=aux, meter_no=aux['meter'], data=data
-    )
-
-
-def prep_data_from_aux(aux, meter_no, data):
-    password_level = aux.get("PA", DEFAULT_PASSWORD_LEVEL)
-    password = aux.get("PASSWORD", DEFAULT_PASSWORD)
-    random_number = aux.get("RANDOM", DEFAULT_RANDOM_NUMBER)
-
+async def generate_reading_cmd(meter_no, command_msg):
+    rand = randrange(0, 0xFF-0x33)
     return prep_data(
         meter_no=meter_no,
-        pass_lvl=password_level,
-        random_no=random_number,
-        passw=password,
-        data=data
+        pass_lvl=DEFAULT_PASSWORD_LEVEL,
+        random_no=rand,
+        passw=DEFAULT_PASSWORD,
+        data=command_msg
     )
 
 

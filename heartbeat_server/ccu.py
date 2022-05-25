@@ -1,60 +1,67 @@
+import json
+import requests
+
 from asyncio.streams import StreamReader, StreamWriter
 from logging import Logger
+from datetime import datetime
 
-from .heartbeat import Heartbeat
-from .hes import process_hes_message
-from .utils import send
+from .heartbeat import read_heartbeat
+from .hes import generate_reading_cmd
+
+from .meter_device import get_reading_cmds
+from .meter_reading import MeterReading
 
 
 async def ccu_handler(reader: StreamReader,
                       writer: StreamWriter,
-                      hes_params: dict,
                       logger: Logger):
-    hes_address = hes_params.get('address', '0.0.0.0')
-    hes_port = hes_params.get('port', '18902')
 
-    heartbeat = await Heartbeat.read_heartbeat(reader)
-    print(f'\n<- Received heartbeat {heartbeat}')
+    heartbeat = await read_heartbeat(reader)
+    print(f'\nccu.ccu_handler:17 Received heartbeat {heartbeat}')
     await heartbeat.send_heartbeat_reply(writer, logger)
-    response = await send_to_hes(hes_address,
-                                 hes_port,
-                                 heartbeat.data)
-    if response:
-        ccu_payload = await process_hes_message(response)
-        ccu_reading = await send_to_ccu(ccu_payload, reader,  writer, logger)
-        await send_to_hes(hes_address,
-                          hes_port,
-                          ccu_reading)
-        logger.info(f'CCU Reading {ccu_reading}')
-    else:
-        raise Exception(f'No response from HES')
+
+    meter_no = heartbeat.device_details
+
+    read_cmds = get_reading_cmds()
+    readings = {}
+
+    for read_cmd in read_cmds:
+        cmd, obis_code = read_cmd
+        reading_cmd = await generate_reading_cmd(meter_no, obis_code)
+        reading = await get_reading(reading_cmd,
+                                    meter_no,
+                                    reader, writer,
+                                    logger)
+        readings[cmd] = (datetime.now(), reading)
+
+    await send_readings({meter_no, readings})
     writer.close()
 
 
-async def send_to_hes(address: str,
-                      port: int,
-                      msg: bytearray):
-    print(f'\n-> Sending to HES {msg}')
-    return await send(address, port, msg)
-
-
-async def send_to_ccu(data, reader, writer, logger=None):
+async def get_reading(reading_cmd,
+                      meter_no,
+                      reader: StreamReader,
+                      writer: StreamWriter,
+                      logger=None):
     tries = 0
-    response = bytearray()
+    meter_reading = None
+    response = None
     while not response and tries < 3:
         if logger is not None:
             logger.info("Trying: %s", tries + 1)
-        writer.write(data)
-        response = await read_response(reader)
-        heartbeat = Heartbeat(response)
-        if heartbeat.is_valid():
-            await heartbeat.send_heartbeat_reply(writer, logger)
-            break
-        else:
-            response = bytearray()
+        writer.write(reading_cmd)
+        response = await reader.read(100)
+        meter_reading = MeterReading(response)
         tries += 1
-    return response
+    return meter_reading.get_value_from_response(meter_no)
 
 
-async def read_response(reader: StreamReader):
-    return await reader.read(100)
+async def send_readings(hes_server_url, readings):
+    resp = requests.post(hes_server_url,
+                         data=json.dumps(readings),
+                         headers={'Content-type': 'application/json',
+                                  'Accept': 'text/plain'})
+    if resp.status_code != 200:
+        raise resp.text
+
+

@@ -8,7 +8,7 @@ class Heartbeat:
                data.startswith(b'\x00'):
             self._data = data
         else:
-            raise Exception("Badly formed heartbeat")
+            raise Exception("B adly formed heartbeat")
 
     @property
     def data(self):
@@ -103,22 +103,36 @@ class Heartbeat:
         return not all(not val for val in self.parse().values())
 
     async def send_heartbeat_reply(self,
+                                   reader: StreamReader,
                                    writer: StreamWriter,
                                    logger=None):
-        reply = self.get_reply()
-        if logger:
-            logger.info("Sending Server Reply: %s", reply.hex())
-        writer.write(reply)
+        tries = 0
+        response = bytearray()
+        while not response and tries < 3:
+            if logger is not None:
+                logger.info("Trying: %s", tries + 1)
+            reply = self.get_reply()
+            writer.write(reply)
+            response = await reader.read(100)
+            heartbeat = Heartbeat(response)
+            if heartbeat.is_valid():
+                await self.send_heartbeat_reply(reader,
+                                                writer, logger)
+                break
+            else:
+                response = bytearray()
+            tries += 1
+        return response
 
-    @staticmethod
-    async def read_heartbeat(reader: StreamReader):
-        data = bytearray()
-        part = await reader.read(8)
-        data += part
-        frame_length = part[-2:]
-        frame_length_int = int.from_bytes(frame_length, 'big')
-        part = await reader.read(frame_length_int)
-        data += part
-        return Heartbeat(data)
+
+async def read_heartbeat(reader: StreamReader):
+    data = bytearray()
+    part = await reader.read(8)
+    data += part
+    frame_length = part[-2:]
+    frame_length_int = int.from_bytes(frame_length, 'big')
+    part = await reader.read(frame_length_int)
+    data += part
+    return Heartbeat(data)
 
 

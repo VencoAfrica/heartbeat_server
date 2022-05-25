@@ -22,10 +22,10 @@ def simulate_ccu_heartbeat():
                 got = sock.recv(1024)
 
                 if got.startswith(b'\00'):
-                    print(f'\n<- Received {got}')
+                    print(f'\ntest_requests.simulate_ccu_heartbeat: Received {got}')
                 elif got.startswith(b'\x68'):
-                    print(f'\n<- Received {got}')
-                    print(f'\n-> Sending {heartbeat}')
+                    print(f'\ntest_requests.simulate_ccu_heartbeat: Received {got}')
+                    print(f'\ntest_requests.simulate_ccu_heartbeat: Sending {heartbeat}')
                     sock.send(heartbeat)
                 if not got:
                     break
