@@ -14,6 +14,7 @@ from .meter_reading import MeterReading
 
 async def ccu_handler(reader: StreamReader,
                       writer: StreamWriter,
+                      hes_server_url: str,
                       logger: Logger):
 
     heartbeat = await read_heartbeat(reader)
@@ -32,9 +33,13 @@ async def ccu_handler(reader: StreamReader,
                                     meter_no,
                                     reader, writer,
                                     logger)
-        readings[cmd] = (datetime.now(), reading)
+        readings[cmd] = [datetime.now(), reading]
 
-    await send_readings({meter_no, readings})
+    await send_readings(hes_server_url,
+                        {
+                            'meter_no': meter_no,
+                            'readings': readings
+                        })
     writer.close()
 
 
@@ -56,9 +61,23 @@ async def get_reading(reading_cmd,
     return meter_reading.get_value_from_response(meter_no)
 
 
-async def send_readings(hes_server_url, readings):
+async def send_readings(hes_server_url, readings: dict):
+    """
+    Readings format:
+    {
+        "meter_no": "12345678901",
+         "readings": {
+              "phase_a_voltage": {
+                    "2019-12-11 10:58:37.039404", "<reading>"
+                },
+                "voltage": {
+                    "2019-12-11 10:58:38.039404", "<reading>"
+                }
+        }
+    }
+    """
     resp = requests.post(hes_server_url,
-                         data=json.dumps(readings),
+                         data=json.dumps(readings, indent=4),
                          headers={'Content-type': 'application/json',
                                   'Accept': 'text/plain'})
     if resp.status_code != 200:
