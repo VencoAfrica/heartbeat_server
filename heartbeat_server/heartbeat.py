@@ -103,26 +103,9 @@ class Heartbeat:
         return not all(not val for val in self.parse().values())
 
     async def send_heartbeat_reply(self,
-                                   reader: StreamReader,
-                                   writer: StreamWriter,
-                                   logger=None):
-        tries = 0
-        response = bytearray()
-        while not response and tries < 3:
-            if logger is not None:
-                logger.info("Trying: %s", tries + 1)
-            reply = self.get_reply()
-            writer.write(reply)
-            response = await reader.read(100)
-            heartbeat = Heartbeat(response)
-            if heartbeat.is_valid():
-                await self.send_heartbeat_reply(reader,
-                                                writer, logger)
-                break
-            else:
-                response = bytearray()
-            tries += 1
-        return response
+                                   writer: StreamWriter):
+        reply = self.get_reply()
+        writer.write(reply)
 
 
 async def read_heartbeat(reader: StreamReader):

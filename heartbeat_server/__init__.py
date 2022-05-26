@@ -14,7 +14,7 @@ async def heartbeat_server(params=None):
         logger = get_logger(params.get('log'))
 
     await run_server(params.get('ccu', {}),
-                     params.get('hes', {}),
+                     params.get('hes_server_url', 'localhost/receive_readings'),
                      ccu, logger)
 
 
@@ -52,8 +52,9 @@ def load_config(filename="config.json"):
               "('%s' Not Found)" % filename)
 
 
-def ccu(hes_params: dict, logger: Logger):
+def ccu(hes_server_url: str, logger: Logger):
     async def handler(reader, writer):
-        await ccu_handler(reader, writer, hes_params, logger)
+        await ccu_handler(reader, writer,
+                          hes_server_url, logger)
     return handler
 
