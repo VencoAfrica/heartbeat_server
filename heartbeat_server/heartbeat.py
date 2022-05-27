@@ -8,7 +8,7 @@ class Heartbeat:
                data.startswith(b'\x00'):
             self._data = data
         else:
-            raise Exception("B adly formed heartbeat")
+            raise Exception("Badly formed heartbeat")
 
     @property
     def data(self):

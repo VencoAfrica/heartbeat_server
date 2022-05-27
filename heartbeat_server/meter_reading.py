@@ -16,13 +16,7 @@ class MeterReading:
         return self._data
 
     def get_value_from_response(self, meter_no):
-        if not isinstance(self._data, (bytes, bytearray)):
-            reading = binascii.unhexlify(self._data)
-
-        if not isinstance(meter_no, str):
-            raise TypeError("Please pass 'meter_no' as a string (got %r)" % (meter_no,))
-
-        resp = self.prep_response(reading, meter_no)
+        resp = self.prep_response(self._data, meter_no)
         try:
             answer = AnswerDataMessage.from_bytes(resp)
             for data in answer.data:

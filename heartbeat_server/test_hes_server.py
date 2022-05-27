@@ -36,7 +36,7 @@ async def handle_heartbeat_server(reader: StreamReader,
 
 def generate_ccu_data_request():
     test_read = test_reads('date')
-    test_request = b'{"key": "%s", "meter": "179000222382", "PA": "3", "PASSWORD": "11111111", "RANDOM": 31}|'\
+    test_request = b'{"key": "%s", "meter": "MTRK179000229742", "PA": "3", "PASSWORD": "11111111", "RANDOM": 31}|'\
                    + test_read
 
     key = generate_key()
