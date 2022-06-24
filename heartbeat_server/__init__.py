@@ -57,4 +57,3 @@ def ccu(hes_server_url: str, logger: Logger):
         await ccu_handler(reader, writer,
                           hes_server_url, logger)
     return handler
-

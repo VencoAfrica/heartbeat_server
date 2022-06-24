@@ -65,15 +65,17 @@ async def send_readings(hes_server_url, readings: dict):
     """
     Readings format:
     {
-        'meter_no': 'MTRK017900013203',
-        'readings': {
-            'phase A voltage': [datetime.datetime(2022, 5, 27, 9, 34, 49, 886451), '00229.5*V'],
-            'phase A voltage THD': [datetime.datetime(2022, 5, 27, 9, 42, 51, 177768), '00229.5*V'],
-            'phase B voltage': [datetime.datetime(2022, 5, 27, 9, 45, 11, 668095), '00229.5*V'],
-            'voltage': [datetime.datetime(2022, 5, 27, 9, 45, 21, 999894), '00229.5*V'],
-            'time': [datetime.datetime(2022, 5, 27, 9, 45, 33, 484019), '00229.5*V'],
-            'date': [datetime.datetime(2022, 5, 27, 9, 45, 35, 286991), '00229.5*V']
-        }
+       "data":{
+          "meter_no":"MTRK017900013203",
+          "readings":{
+             "phase A voltage":{
+                "2022-5-27 9:34:49.886451":"00229.5*V"
+             },
+             "phase A voltage THD":{
+                "2022-5-27 9:42:51.177768":"00229.5*V"
+             }
+          }
+       }
     }
     """
     resp = requests.post(hes_server_url,
