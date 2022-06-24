@@ -7,9 +7,21 @@ from .logger import get_logger
 from .heartbeat import Heartbeat
 from .hes import generate_reading_cmd
 from .ccu import ccu_handler
+from .bulk_requests import run_bulk_requests_handler
+
+
+async def write_request_server(params=None):
+    if params.get('log'):
+        logger = get_logger(params.get('log'))
+
+    host = params.get('host', '0.0.0.0')
+    bwr_port = params.get('bwr_port', '18902')
+
+    run_bulk_requests_handler(params)
 
 
 async def heartbeat_server(params=None):
+    logger = None
     if params.get('log'):
         logger = get_logger(params.get('log'))
 
@@ -56,4 +68,10 @@ def ccu(hes_server_url: str, logger: Logger):
     async def handler(reader, writer):
         await ccu_handler(reader, writer,
                           hes_server_url, logger)
+
     return handler
+
+async def bulk_writes_handler(reader, writer):
+
+
+    pass
