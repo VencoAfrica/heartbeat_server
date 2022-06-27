@@ -18,7 +18,7 @@ async def ccu_handler(reader: StreamReader,
                       logger: Logger):
 
     heartbeat = await read_heartbeat(reader)
-    print(f'\nccu.ccu_handler:17 Received heartbeat {heartbeat}')
+    print(f'\nccu.ccu_handler(): Received heartbeat {heartbeat}')
     await heartbeat.send_heartbeat_reply(writer)
 
     meter_no = heartbeat.device_details.decode()

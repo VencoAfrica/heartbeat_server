@@ -71,7 +71,3 @@ def ccu(hes_server_url: str, logger: Logger):
 
     return handler
 
-async def bulk_writes_handler(reader, writer):
-
-
-    pass
