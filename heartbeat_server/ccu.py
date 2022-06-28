@@ -15,15 +15,17 @@ from .meter_reading import MeterReading
 async def ccu_handler(reader: StreamReader,
                       writer: StreamWriter,
                       hes_server_url: str,
+                      redis_params: dict,
                       logger: Logger):
 
     heartbeat = await read_heartbeat(reader)
-    print(f'\nccu.ccu_handler(): Received heartbeat {heartbeat}')
+    if logger:
+        logger.info(f'\nccu.ccu_handler(): Received heartbeat {heartbeat}')
     await heartbeat.send_heartbeat_reply(writer)
 
     meter_no = heartbeat.device_details.decode()
 
-    read_cmds = get_reading_cmds()
+    read_cmds = get_reading_cmds(redis_params)
     readings = {}
 
     for read_cmd in read_cmds:

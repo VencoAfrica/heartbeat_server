@@ -24,6 +24,6 @@ if __name__ == "__main__":
 
     if args.serve:
         config = load_config()
+        write_request_server(config)
         asyncio.run(heartbeat_server(config))
-        asyncio.run(write_request_server(config))
 

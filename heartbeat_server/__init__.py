@@ -10,14 +10,16 @@ from .ccu import ccu_handler
 from .bulk_requests import run_bulk_requests_handler
 
 
-async def write_request_server(params=None):
+def write_request_server(params=None):
     if params.get('log'):
         logger = get_logger(params.get('log'))
 
-    host = params.get('host', '0.0.0.0')
-    bwr_port = params.get('bwr_port', '18902')
+    bwr_params = params.get('bulk_write_requests')
+    redis_params = params.get('redis')
 
-    run_bulk_requests_handler(params)
+    run_bulk_requests_handler(logger,
+                              bwr_params,
+                              redis_params)
 
 
 async def heartbeat_server(params=None):
@@ -26,12 +28,14 @@ async def heartbeat_server(params=None):
         logger = get_logger(params.get('log'))
 
     await run_server(params.get('ccu', {}),
+                     params.get('redis', {}),
                      params.get('hes_server_url', 'localhost/receive_readings'),
                      ccu, logger)
 
 
 async def run_server(ccu_params: dict,
                      hes_params: dict,
+                     redis_params: dict,
                      callback,
                      logger: Logger):
     host = ccu_params.get('host', '0.0.0.0')
@@ -39,7 +43,7 @@ async def run_server(ccu_params: dict,
     name = ccu_params.get('name', '')
 
     server = await asyncio.start_server(
-        callback(hes_params, logger),
+        callback(hes_params, redis_params, logger),
         host, port)
     addr = server.sockets[0].getsockname()
 
@@ -64,10 +68,13 @@ def load_config(filename="config.json"):
               "('%s' Not Found)" % filename)
 
 
-def ccu(hes_server_url: str, logger: Logger):
+def ccu(hes_server_url: str,
+        redis_params: dict,
+        logger: Logger):
     async def handler(reader, writer):
         await ccu_handler(reader, writer,
-                          hes_server_url, logger)
+                          hes_server_url,
+                          redis_params,
+                          logger)
 
     return handler
-
