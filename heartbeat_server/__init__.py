@@ -7,19 +7,6 @@ from .logger import get_logger
 from .heartbeat import Heartbeat
 from .hes import generate_reading_cmd
 from .ccu import ccu_handler
-from .bulk_requests import run_bulk_requests_handler
-
-
-def write_request_server(params=None):
-    if params.get('log'):
-        logger = get_logger(params.get('log'))
-
-    bwr_params = params.get('bulk_write_requests')
-    redis_params = params.get('redis')
-
-    run_bulk_requests_handler(logger,
-                              bwr_params,
-                              redis_params)
 
 
 async def heartbeat_server(params=None):
@@ -28,8 +15,8 @@ async def heartbeat_server(params=None):
         logger = get_logger(params.get('log'))
 
     await run_server(params.get('ccu', {}),
-                     params.get('redis', {}),
                      params.get('hes_server_url', 'localhost/receive_readings'),
+                     params.get('redis', {}),
                      ccu, logger)
 
 

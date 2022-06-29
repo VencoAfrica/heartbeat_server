@@ -1,8 +1,7 @@
 import argparse
 import asyncio
 
-from . import load_config, heartbeat_server, \
-    write_request_server
+from . import load_config, heartbeat_server
 from .logs import create_logs_folder
 from .supervisor import setup_supervisor
 from .config import setup_config_json
@@ -24,6 +23,5 @@ if __name__ == "__main__":
 
     if args.serve:
         config = load_config()
-        write_request_server(config)
         asyncio.run(heartbeat_server(config))
 

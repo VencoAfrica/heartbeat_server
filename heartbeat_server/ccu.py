@@ -29,18 +29,22 @@ async def ccu_handler(reader: StreamReader,
     readings = {}
 
     for read_cmd in read_cmds:
-        cmd, obis_code = read_cmd
-        reading_cmd = await generate_reading_cmd(meter_no, obis_code)
-        reading = await get_reading(reading_cmd,
-                                    meter_no,
-                                    reader, writer,
-                                    logger)
-        readings[cmd] = [datetime.now(), reading]
+        meter, cmd, obis_code = read_cmd
+
+        if meter == '*' or meter == meter_no:
+            generated_reading_cmd = await generate_reading_cmd(meter_no, obis_code)
+            reading = await get_reading(generated_reading_cmd,
+                                        meter_no,
+                                        reader, writer,
+                                        logger)
+            readings[cmd] = [datetime.now(), reading]
 
     await send_readings(hes_server_url,
                         {
-                            'meter_no': meter_no,
-                            'readings': readings
+                            "data": {
+                                'meter_no': meter_no,
+                                'readings': readings
+                            }
                         })
     writer.close()
 
