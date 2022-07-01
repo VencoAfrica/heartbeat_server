@@ -31,7 +31,8 @@ async def ccu_handler(reader: StreamReader,
     for read_cmd in read_cmds:
         meter, cmd, obis_code = read_cmd
 
-        if meter == '*' or meter == meter_no:
+        if meter == '*' or \
+                str(meter, 'utf-8') == meter_no:
             generated_reading_cmd = await generate_reading_cmd(meter_no, obis_code)
             reading = await get_reading(generated_reading_cmd,
                                         meter_no,
