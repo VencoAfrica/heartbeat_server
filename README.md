@@ -28,7 +28,7 @@ service supervisor restart
 
 3.  Install app:
 ```
-> git clone https://github.com/manqala/hearbeat_server.git
+> git clone git@github.com:VencoAfrica/heartbeat_server.git
 (env)> pip install -e heartbeat_server
 ```
 4. Setup app configuration and edit 'config.json' as required
