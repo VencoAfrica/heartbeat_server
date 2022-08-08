@@ -1,5 +1,3 @@
-import binascii
-
 from iec62056_21.messages import AnswerDataMessage
 
 

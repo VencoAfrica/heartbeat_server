@@ -17,14 +17,12 @@ async def ccu_handler(reader: StreamReader,
                       hes_server_url: str,
                       redis_params: dict,
                       logger: Logger):
-
     heartbeat = await read_heartbeat(reader)
     if logger:
         logger.info(f'\nccu.ccu_handler(): Received heartbeat {heartbeat}')
+
     await heartbeat.send_heartbeat_reply(writer)
-
     meter_no = heartbeat.device_details.decode()
-
     read_cmds = get_reading_cmds(redis_params)
     readings = {}
 
@@ -38,9 +36,10 @@ async def ccu_handler(reader: StreamReader,
                                         meter_no,
                                         reader, writer,
                                         logger)
-            readings[cmd] = [datetime.now(), reading]
+            readings[cmd] = {datetime.now().isoformat(): reading}
 
-    await send_readings(hes_server_url,
+    await send_readings(logger,
+                        hes_server_url,
                         {
                             "data": {
                                 'meter_no': meter_no,
@@ -68,7 +67,7 @@ async def get_reading(reading_cmd,
     return meter_reading.get_value_from_response(meter_no)
 
 
-async def send_readings(hes_server_url, readings: dict):
+async def send_readings(logger, hes_server_url, readings: dict):
     """
     Readings format:
     {
@@ -87,8 +86,9 @@ async def send_readings(hes_server_url, readings: dict):
     """
     resp = requests.post(hes_server_url,
                          data=json.dumps(readings, indent=None, default=str),
-                         headers={'Content-type': 'application/json',
-                                  'Accept': 'text/plain'})
+                         headers={'Authorization': 'token 9dc488d5f0eed02:8a73efd1a4508dc',
+                                  'Content-type': 'application/json'})
+    logger.info(f'Send readings response {resp.text}')
     if resp.status_code != 200:
         raise Exception(resp.text)
 

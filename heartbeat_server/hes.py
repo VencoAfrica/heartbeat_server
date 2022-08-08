@@ -1,5 +1,3 @@
-import json
-
 from random import randrange
 
 DEFAULT_PASSWORD_LEVEL = 0x01
