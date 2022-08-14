@@ -17,12 +17,14 @@ async def heartbeat_server(params=None):
     await run_server(params.get('ccu', {}),
                      params.get('hes_server_url', 'localhost/receive_readings'),
                      params.get('redis', {}),
+                     params.get('auth_token'),
                      ccu, logger)
 
 
 async def run_server(ccu_params: dict,
                      hes_params: dict,
                      redis_params: dict,
+                     auth_token: str,
                      callback,
                      logger: Logger):
     host = ccu_params.get('host', '0.0.0.0')
@@ -30,7 +32,7 @@ async def run_server(ccu_params: dict,
     name = ccu_params.get('name', '')
 
     server = await asyncio.start_server(
-        callback(hes_params, redis_params, logger),
+        callback(hes_params, redis_params, auth_token, logger),
         host, port)
     addr = server.sockets[0].getsockname()
 
@@ -57,11 +59,13 @@ def load_config(filename="config.json"):
 
 def ccu(hes_server_url: str,
         redis_params: dict,
+        auth_token: str,
         logger: Logger):
     async def handler(reader, writer):
         await ccu_handler(reader, writer,
                           hes_server_url,
                           redis_params,
+                          auth_token,
                           logger)
 
     return handler

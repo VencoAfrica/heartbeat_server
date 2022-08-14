@@ -1,13 +1,15 @@
 from asyncio.streams import StreamReader, StreamWriter
 from datetime import datetime
+from logging import Logger
 
 
 class Heartbeat:
-    def __init__(self, data):
+    def __init__(self, data, logger):
         if isinstance(data, (bytes, bytearray)) and \
                data.startswith(b'\x00'):
             self._data = data
         else:
+            logger.info(data)
             raise Exception("Badly formed heartbeat")
 
     @property
@@ -108,7 +110,7 @@ class Heartbeat:
         writer.write(reply)
 
 
-async def read_heartbeat(reader: StreamReader):
+async def read_heartbeat(reader: StreamReader, logger: Logger):
     data = bytearray()
     part = await reader.read(8)
     data += part
@@ -116,6 +118,6 @@ async def read_heartbeat(reader: StreamReader):
     frame_length_int = int.from_bytes(frame_length, 'big')
     part = await reader.read(frame_length_int)
     data += part
-    return Heartbeat(data)
+    return Heartbeat(data, logger)
 
 
