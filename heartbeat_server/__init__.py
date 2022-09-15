@@ -37,7 +37,7 @@ async def run_server(ccu_params: dict,
     addr = server.sockets[0].getsockname()
 
     if logger:
-        logger.info(f'Waiting for {name} on {addr}')
+        logger.info(f'Starting {name} on {addr}')
 
     try:
         async with server:

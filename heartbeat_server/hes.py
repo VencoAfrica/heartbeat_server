@@ -1,22 +1,25 @@
 from random import randrange
+from logging import Logger
+
 
 DEFAULT_PASSWORD_LEVEL = 0x01
 DEFAULT_PASSWORD = b"33333333"
 DEFAULT_RANDOM_NUMBER = 31
 
 
-async def generate_reading_cmd(meter_no, command_msg):
+async def generate_reading_cmd(meter_no, command_msg, logger: Logger):
     rand = randrange(0, 0xFF-0x33)
     return prep_data(
         meter_no=meter_no,
         pass_lvl=DEFAULT_PASSWORD_LEVEL,
         random_no=rand,
         passw=DEFAULT_PASSWORD,
-        data=command_msg
+        data=command_msg,
+        logger=logger
     )
 
 
-def prep_data(meter_no, pass_lvl, random_no, passw, data):
+def prep_data(meter_no, pass_lvl, random_no, passw, data, logger: Logger):
     if not isinstance(random_no, bytes):
         random_no = (int(str(random_no))).to_bytes(1, 'big')
 
@@ -42,6 +45,20 @@ def prep_data(meter_no, pass_lvl, random_no, passw, data):
     data_sum = sum(out)
     out += data_sum.to_bytes(2, 'big')[-1:]
     out += bytearray([0x16])
+
+    # ---
+    meter_address = get_meter_no(meter_no)
+    _len = length.to_bytes(1, 'big')
+    mac_l = get_mac(random_no, passw, 'L')
+    mac_h = get_mac(random_no, passw, 'H')
+    data = bytearray(0x33 + i for i in data)
+    cs = data_sum.to_bytes(2, 'big')[-1:]
+
+    logger.info(f'0x68 meter_address {meter_address} LEN {_len} '
+                f'PA {pass_lvl} random {random_no_padded} MAC_L {mac_l} MAC_H {mac_h} '
+                f'IEC16056-21 read or write data frames {data} CS {cs} 0x16')
+    # ---
+
     return out
 
 
@@ -84,6 +101,3 @@ def get_mac(random_no, password, low_or_high='L'):
         raise TypeError('low_or_high should be "H" or "L"')
     crc = CRC(b'\xA5', arr)
     return (int.from_bytes(crc, 'big') + 0x33).to_bytes(2, 'big')[-1:]
-
-
-

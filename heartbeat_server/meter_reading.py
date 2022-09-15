@@ -1,19 +1,22 @@
 from iec62056_21.messages import AnswerDataMessage
+from logging import Logger
 
 
 class MeterReading:
-    def __init__(self, data):
+    def __init__(self, data, logger):
         if isinstance(data, (bytes, bytearray)) and \
-               data.startswith(b'\x68'):
+                data.startswith(b'\x68'):
             self._data = data
         else:
+            logger.info('Badly formed reading ' + ''.join('{:02x}'
+                                                          .format(x) for x in data))
             raise Exception("Badly formed reading")
 
     @property
     def data(self):
         return self._data
 
-    def get_value_from_response(self, meter_no):
+    def get_value_from_response(self, meter_no, logger: Logger):
         resp = self.prep_response(self._data, meter_no)
         try:
             answer = AnswerDataMessage.from_bytes(resp)
@@ -35,7 +38,7 @@ class MeterReading:
                 start = 4 if part[0] == 0x81 else 2
                 try:
                     out.append(bytearray(i - 0x33 for i in part[start:-2]))
-                except Exception as e:
+                except:
                     pass
         return out[-1] if out else response
 

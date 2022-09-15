@@ -20,30 +20,44 @@ async def ccu_handler(reader: StreamReader,
                       logger: Logger):
     heartbeat = await read_heartbeat(reader, logger)
     if logger:
-        logger.info(f'\nccu.ccu_handler(): Received heartbeat {heartbeat}')
+        logger.info(f'\nReceived heartbeat {heartbeat}')
 
-    await heartbeat.send_heartbeat_reply(writer)
-    meter_no = heartbeat.device_details.decode()
-    read_cmds = get_reading_cmds(redis_params)
-    readings = {}
+    reply_resp = await heartbeat.send_heartbeat_reply(logger, reader, writer)
+    logger.info('Heartbeat reply response: ' + ''.join('{:02x}'
+                                                       .format(x) for x in reply_resp))
+
+    ccu_no = heartbeat.device_details.decode()
+    logger.info(f'Preparing to read meters for {ccu_no}')
+    read_cmds = get_reading_cmds(ccu_no, redis_params, logger)
+    readings = []
 
     for read_cmd in read_cmds:
         meter, cmd, obis_code = read_cmd
+        read = {}
+        logger.info(f'Reading {meter} {obis_code} ' + \
+                    ''.join('{:02x}'
+                            .format(x) for x in obis_code))
+        generated_reading_cmd = await generate_reading_cmd(meter, obis_code, logger)
+        logger.info('Reading cmd: ' + ''.join('{:02x}'
+                                              .format(x) for x in generated_reading_cmd))
+        reading = await get_reading(generated_reading_cmd,
+                                    meter,
+                                    reader, writer,
+                                    logger)
+        if reading:
+            logger.info(f'Got reading for {meter}: {reading}')
+            read['meter_no'] = meter
+            read['type'] = cmd
+            read['reading'] = reading
+            read['timestamp'] = datetime.now().isoformat()
+            readings.append(read)
 
-        if meter == '*' or \
-                str(meter, 'utf-8') == meter_no:
-            generated_reading_cmd = await generate_reading_cmd(meter_no, obis_code)
-            reading = await get_reading(generated_reading_cmd,
-                                        meter_no,
-                                        reader, writer,
-                                        logger)
-            readings[cmd] = {datetime.now().isoformat(): reading}
-
+    logger.info('Preparing to send readings')
     await send_readings(logger,
                         hes_server_url,
                         {
                             "data": {
-                                'meter_no': meter_no,
+                                'ccu_no': ccu_no,
                                 'readings': readings
                             }
                         },
@@ -57,16 +71,24 @@ async def get_reading(reading_cmd,
                       writer: StreamWriter,
                       logger=None):
     tries = 0
-    meter_reading = None
     response = None
     while not response and tries < 3:
-        if logger is not None:
-            logger.info("Trying: %s", tries + 1)
-        writer.write(reading_cmd)
-        response = await reader.read(100)
-        meter_reading = MeterReading(response)
-        tries += 1
-    return meter_reading.get_value_from_response(meter_no)
+        try:
+            if logger is not None:
+                logger.info("Attempt: %s", tries + 1)
+            writer.write(reading_cmd)
+            response = await reader.read(100)
+            logger.info(f'\nResponse {response} ' + ''.join('{:02x}'
+                                                            .format(x) for x in response))
+            meter_reading = MeterReading(response, logger)
+            logger.info(f'\nMeter Reading {meter_reading}')
+            return meter_reading.get_value_from_response(meter_no, logger)
+        except Exception as e:
+            response = None
+            logger.info(f'Unable to get reading for {meter_no} Exception: {str(e)}')
+            break
+        finally:
+            tries += 1
 
 
 async def send_readings(logger,
@@ -74,21 +96,26 @@ async def send_readings(logger,
                         readings: dict,
                         auth_token):
     """
-    Readings format:
-    {
-       "data":{
-          "meter_no":"MTRK017900013203",
-          "readings":{
-             "phase A voltage":{
-                "2022-5-27 9:34:49.886451":"00229.5*V"
-             },
-             "phase A voltage THD":{
-                "2022-5-27 9:42:51.177768":"00229.5*V"
+     Readings format:
+     {
+       "data":[
+         {
+          "ccu_no":"MTRK017900013203",
+          "readings":[
+             {
+                 "meter: "017900013203",
+                 "type: "phase A voltage",
+                 "reading" : "00229.5*V",
+                 "timestamp" :"2022-5-27 9:34:49.886451"
              }
+            ]
           }
-       }
+       ]
     }
     """
+    res = json.dumps(readings, indent=None, default=str)
+    logger.info(f'Sending requests to {hes_server_url}')
+    logger.info(f'Sending data {res}')
     resp = requests.post(hes_server_url,
                          data=json.dumps(readings, indent=None, default=str),
                          headers={'Authorization': 'token %s'.format(auth_token),
@@ -96,5 +123,4 @@ async def send_readings(logger,
     logger.info(f'Send readings response {resp.text}')
     if resp.status_code != 200:
         raise Exception(resp.text)
-
 
