@@ -27,41 +27,46 @@ async def ccu_handler(reader: StreamReader,
                                                        .format(x) for x in reply_resp))
 
     ccu_no = heartbeat.device_details.decode()
-    logger.info(f'Preparing to read meters for {ccu_no}')
-    read_cmds = get_reading_cmds(ccu_no, redis_params, logger)
-    readings = []
 
-    for read_cmd in read_cmds:
-        meter, cmd, obis_code = read_cmd
-        read = {}
-        logger.info(f'Reading {meter} {obis_code} ' + \
-                    ''.join('{:02x}'
-                            .format(x) for x in obis_code))
-        generated_reading_cmd = await generate_reading_cmd(meter, obis_code, logger)
-        logger.info('Reading cmd: ' + ''.join('{:02x}'
-                                              .format(x) for x in generated_reading_cmd))
-        reading = await get_reading(generated_reading_cmd,
-                                    meter,
-                                    reader, writer,
-                                    logger)
-        if reading:
-            logger.info(f'Got reading for {meter}: {reading}')
-            read['meter_no'] = meter
-            read['type'] = cmd
-            read['reading'] = reading
-            read['timestamp'] = datetime.now().isoformat()
-            readings.append(read)
+    if ccu_no:
+        logger.info(f'Preparing to read meters for {ccu_no}')
+        read_cmds = get_reading_cmds(ccu_no, redis_params, logger)
+        readings = []
 
-    logger.info('Preparing to send readings')
-    await send_readings(logger,
-                        hes_server_url,
-                        {
-                            "data": {
-                                'ccu_no': ccu_no,
-                                'readings': readings
-                            }
-                        },
-                        auth_token)
+        for read_cmd in read_cmds:
+            meter, cmd, obis_code = read_cmd
+            read = {}
+            logger.info(f'Reading {meter} {obis_code} ' + \
+                        ''.join('{:02x}'
+                                .format(x) for x in obis_code))
+            generated_reading_cmd = await generate_reading_cmd(meter, obis_code, logger)
+            logger.info('Reading cmd: ' + ''.join('{:02x}'
+                                                  .format(x) for x in generated_reading_cmd))
+            reading = await get_reading(generated_reading_cmd,
+                                        meter,
+                                        reader, writer,
+                                        logger)
+            if reading:
+                logger.info(f'Got reading for {meter}: {reading}')
+                read['meter_no'] = meter
+                read['type'] = cmd
+                read['reading'] = reading
+                read['timestamp'] = datetime.now().isoformat()
+                readings.append(read)
+
+        logger.info('Preparing to send readings')
+        await send_readings(logger,
+                            hes_server_url,
+                            {
+                                "data": {
+                                    'ccu_no': ccu_no,
+                                    'readings': readings
+                                }
+                            },
+                            auth_token)
+    else:
+        logger.info(f'CCU not found in heartbeat {heartbeat}')
+        
     writer.close()
 
 
