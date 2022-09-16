@@ -1,6 +1,7 @@
 from iec62056_21.messages import AnswerDataMessage
 from logging import Logger
 
+
 class MeterReading:
     def __init__(self, data, logger):
         if isinstance(data, (bytes, bytearray)) and \
