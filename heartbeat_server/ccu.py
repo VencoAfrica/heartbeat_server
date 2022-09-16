@@ -20,11 +20,11 @@ async def ccu_handler(reader: StreamReader,
                       logger: Logger):
     heartbeat = await read_heartbeat(reader, logger)
     if logger:
-        logger.info(f'\nReceived heartbeat {heartbeat}')
+        logger.info(f'\nccu.ccu_handler(): Received heartbeat {heartbeat}')
 
     reply_resp = await heartbeat.send_heartbeat_reply(logger, reader, writer)
     logger.info('Heartbeat reply response: ' + ''.join('{:02x}'
-                                                       .format(x) for x in reply_resp))
+                       .format(x) for x in reply_resp))
 
     ccu_no = heartbeat.device_details.decode()
 
@@ -84,7 +84,7 @@ async def get_reading(reading_cmd,
             writer.write(reading_cmd)
             response = await reader.read(100)
             logger.info(f'\nResponse {response} ' + ''.join('{:02x}'
-                                                            .format(x) for x in response))
+                                            .format(x) for x in response))
             meter_reading = MeterReading(response, logger)
             logger.info(f'\nMeter Reading {meter_reading}')
             return meter_reading.get_value_from_response(meter_no, logger)
@@ -96,10 +96,7 @@ async def get_reading(reading_cmd,
             tries += 1
 
 
-async def send_readings(logger,
-                        hes_server_url,
-                        readings: dict,
-                        auth_token):
+async def send_readings(logger, hes_server_url, readings: dict, auth_token):
     """
      Readings format:
      {
@@ -123,7 +120,7 @@ async def send_readings(logger,
     logger.info(f'Sending data {res}')
     resp = requests.post(hes_server_url,
                          data=json.dumps(readings, indent=None, default=str),
-                         headers={'Authorization': 'token %s'.format(auth_token),
+                         headers={'Authorization': f'token {auth_token}',
                                   'Content-type': 'application/json'})
     logger.info(f'Send readings response {resp.text}')
     if resp.status_code != 200:

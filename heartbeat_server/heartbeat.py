@@ -8,13 +8,13 @@ from logging import Logger
 class Heartbeat:
     def __init__(self, data, logger):
         if isinstance(data, (bytes, bytearray)) and \
-                data.startswith(b'\x00'):
+               data.startswith(b'\x00'):
             logger.info('Received valid heartbeat: ' + ''.join('{:02x}'
-                                                               .format(x) for x in data))
+                .format(x) for x in data))
             self._data = data
         else:
             logger.info('Received invalid heartbeat: ' + ''.join('{:02x}'
-                                                                 .format(x) for x in data))
+                .format(x) for x in data))
             raise Exception("Badly formed heartbeat")
 
     def __str__(self) -> str:
@@ -118,7 +118,7 @@ class Heartbeat:
                                    writer: StreamWriter):
         reply = self.get_reply()
         logger.info('Heartbeat Reply: ' + ''.join('{:02x}'
-                                                  .format(x) for x in reply))
+                            .format(x) for x in reply))
         writer.write(reply)
         return await reader.read(100)
 
