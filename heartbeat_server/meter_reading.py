@@ -20,6 +20,12 @@ class MeterReading:
         resp = self.prep_response(self._data, meter_no)
         try:
             answer = AnswerDataMessage.from_bytes(resp)
+            logger.info(type(answer))
+            logger.info('Badly formed reading '
+                        + ''.join('{:02x}'
+                                  .format(x) for x in answer.data))
+            logger.info(resp.hex)
+
             for data in answer.data:
                 if data.value:
                     return data.value

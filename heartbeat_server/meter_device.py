@@ -43,16 +43,20 @@ def get_remote_request_commands(redis_params, logger: Logger):
     Remote requests may be reads or writes and should
     have the following format
 
-    Write
+    Write:
     ------
     key: *|<timestamp>
-    value: [W]:meter_no:cmd:OBIS_Code:value
+    value: W:meter_no:cmd:OBIS_Code:value
 
-    Read
+    Read:
     -----
     key: *|<timestamp>
-    value: [R]:meter_no:cmd:OBIS_Code
+    value: R:meter_no:cmd:OBIS_Code
 
+    Examples:
+    --------
+    set *|1663672448 "R:MTRK179000989931:Get Meters Count:96.51.90.255"
+    set *|1663672449 "R:MTRK179000989931:Get First Meter:96.51.91.1"
     """
     remote_commands = []
     r = redis.Redis(host=redis_params.get('host', '0.0.0.0'),

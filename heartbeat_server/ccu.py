@@ -39,12 +39,17 @@ async def process_heartbeat(reader: StreamReader,
         logger.info(f'CCU not found in heartbeat {heartbeat}')
 
 
-def read_meters(reader: StreamReader, writer: StreamWriter,
-                ccu_no: str, logger: Logger,
+def read_meters(reader: StreamReader,
+                writer: StreamWriter,
+                ccu_no: str,
+                logger: Logger,
                 redis_params: dict):
     logger.info(f'Preparing to read meters for {ccu_no}')
     read_cmds = get_reading_cmds(ccu_no, redis_params, logger)
     readings = []
+
+    reading_failed = False
+    resent_heartbeat = None
 
     for read_cmd in read_cmds:
         try:
@@ -53,29 +58,36 @@ def read_meters(reader: StreamReader, writer: StreamWriter,
             logger.info(f'Reading {meter} {obis_code} ' +
                         ''.join('{:02x}'
                                 .format(x) for x in obis_code))
-            generated_reading_cmd = await generate_reading_cmd(meter, obis_code, logger)
+            generated_reading_cmd \
+                = await generate_reading_cmd(meter, obis_code, logger)
             logger.info('Reading cmd: ' +
                         ''.join('{:02x}'
                                 .format(x) for x in generated_reading_cmd))
-            reading = await get_reading(generated_reading_cmd,
-                                        meter,
-                                        reader, writer,
-                                        logger)
-            if reading:
-                logger.info(f'Got reading for {meter}: {reading}')
+            response = await get_reading(generated_reading_cmd,
+                                         meter,
+                                         reader, writer,
+                                         logger)
+            if isinstance(response, MeterReading):
+                logger.info(f'Got reading for {meter}: {response}')
                 read['meter_no'] = meter
                 read['type'] = cmd
-                read['reading'] = reading
+                read['reading'] = response
                 read['timestamp'] = datetime.now().isoformat()
                 readings.append(read)
+            elif isinstance(response, Heartbeat):
+                reading_failed = True
+                resent_heartbeat = response
+                break
+            else:
+                logger.error(f'Invalid returned read {response}')
 
         except Exception as e:
-            if isinstance('Heartbeat'):
-                heartbeat = await read_heartbeat(reader, logger)
-                process_heartbeat(heartbeat)
-            else:
-                logger.error(f'Invalid returned read {e}')
-                continue
+            logger.error(f'{e}')
+
+    if reading_failed:
+        await process_heartbeat(resent_heartbeat)
+        return
+
     return readings
 
 
@@ -131,7 +143,6 @@ async def get_reading(reading_cmd,
                 return Heartbeat(response, logger)
             else:
                 raise Exception(e)
-            break
         finally:
             tries += 1
 
