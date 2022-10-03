@@ -11,6 +11,8 @@ from .hes import generate_reading_cmd
 from .meter_device import get_reading_cmds
 from .meter_reading import MeterReading
 
+from .http import HTTPRequest, process_http_request, send_callback
+
 
 async def process_heartbeat(reader: StreamReader,
                             writer: StreamWriter,
@@ -48,7 +50,7 @@ def read_meters(reader: StreamReader, writer: StreamWriter,
 
     for read_cmd in read_cmds:
         try:
-            meter, cmd, obis_code = read_cmd
+            meter, cmd, obis_code, callback_url = read_cmd
             read = {}
             logger.info(f'Reading {meter} {obis_code} ' +
                         ''.join('{:02x}'
@@ -68,6 +70,9 @@ def read_meters(reader: StreamReader, writer: StreamWriter,
                 read['reading'] = reading
                 read['timestamp'] = datetime.now().isoformat()
                 readings.append(read)
+
+                if callback_url:
+                    send_callback(read, callback_url, writer, logger)
 
         except Exception as e:
             if isinstance('Heartbeat'):
@@ -98,11 +103,17 @@ async def send_readings(readings: list,
 
 async def ccu_handler(reader: StreamReader, writer: StreamWriter,
                       hes_server_url: str, redis_params: dict,
-                      auth_token: str, logger: Logger):
+                      auth_token: str, hes_auth_token: str,
+                      logger: Logger):
     heartbeat = await read_heartbeat(reader, logger)
-    await process_heartbeat(reader, writer, heartbeat,
-                            redis_params, hes_server_url,
-                            auth_token, logger)
+
+    if isinstance(heartbeat, HTTPRequest):
+        await process_http_request(heartbeat, reader,
+                                   auth_token, redis_params)
+    elif isinstance(heartbeat, Heartbeat):
+        await process_heartbeat(reader, writer, heartbeat,
+                                redis_params, hes_server_url,
+                                hes_auth_token, logger)
     writer.close()
 
 
@@ -165,3 +176,4 @@ async def send_readings(logger, hes_server_url, readings: dict, auth_token):
     logger.info(f'Send readings response {resp.text}')
     if resp.status_code != 200:
         raise Exception(resp.text)
+
