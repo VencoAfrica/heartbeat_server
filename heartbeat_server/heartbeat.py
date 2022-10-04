@@ -3,7 +3,7 @@ import json
 from asyncio.streams import StreamReader, StreamWriter
 from datetime import datetime
 from logging import Logger
-from .http import is_supported_http_request, HTTPRequest
+from .http_requests import is_supported_http_request, HTTPRequest
 
 
 class Heartbeat:
@@ -135,7 +135,7 @@ async def read_heartbeat(reader: StreamReader, logger: Logger):
     part = await reader.read(frame_length_int)
     data += part
 
-    if is_supported_http_request(data):
+    if is_supported_http_request(data, logger):
         return HTTPRequest(data)
 
     return Heartbeat(data, logger)

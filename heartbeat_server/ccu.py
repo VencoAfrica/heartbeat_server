@@ -11,7 +11,7 @@ from .hes import generate_reading_cmd
 from .meter_device import get_reading_cmds
 from .meter_reading import MeterReading
 
-from .http import HTTPRequest, process_http_request, send_callback
+from .http_requests import HTTPRequest, process_http_request, send_callback
 
 
 async def process_heartbeat(reader: StreamReader,
@@ -30,7 +30,7 @@ async def process_heartbeat(reader: StreamReader,
     ccu_no = heartbeat.device_details.decode()
 
     if ccu_no:
-        readings = read_meters(reader, writer,
+        readings = await read_meters(reader, writer,
                                ccu_no, logger,
                                redis_params)
         await send_readings(readings, ccu_no,
@@ -41,9 +41,9 @@ async def process_heartbeat(reader: StreamReader,
         logger.info(f'CCU not found in heartbeat {heartbeat}')
 
 
-def read_meters(reader: StreamReader, writer: StreamWriter,
-                ccu_no: str, logger: Logger,
-                redis_params: dict):
+async def read_meters(reader: StreamReader, writer: StreamWriter,
+                      ccu_no: str, logger: Logger,
+                      redis_params: dict):
     logger.info(f'Preparing to read meters for {ccu_no}')
     read_cmds = get_reading_cmds(ccu_no, redis_params, logger)
     readings = []
@@ -72,12 +72,12 @@ def read_meters(reader: StreamReader, writer: StreamWriter,
                 readings.append(read)
 
                 if callback_url:
-                    send_callback(read, callback_url, writer, logger)
+                    send_callback(read, callback_url, logger)
 
         except Exception as e:
             if isinstance('Heartbeat'):
                 heartbeat = await read_heartbeat(reader, logger)
-                process_heartbeat(heartbeat)
+                await process_heartbeat(heartbeat)
             else:
                 logger.error(f'Invalid returned read {e}')
                 continue
@@ -108,8 +108,8 @@ async def ccu_handler(reader: StreamReader, writer: StreamWriter,
     heartbeat = await read_heartbeat(reader, logger)
 
     if isinstance(heartbeat, HTTPRequest):
-        await process_http_request(heartbeat, reader,
-                                   auth_token, redis_params)
+        await process_http_request(heartbeat, reader, auth_token,
+                                   redis_params, writer)
     elif isinstance(heartbeat, Heartbeat):
         await process_heartbeat(reader, writer, heartbeat,
                                 redis_params, hes_server_url,
@@ -176,4 +176,3 @@ async def send_readings(logger, hes_server_url, readings: dict, auth_token):
     logger.info(f'Send readings response {resp.text}')
     if resp.status_code != 200:
         raise Exception(resp.text)
-

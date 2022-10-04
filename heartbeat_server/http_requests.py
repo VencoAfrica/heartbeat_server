@@ -12,7 +12,7 @@ from logging import Logger
 
 class HTTPRequest:
 
-    def __int__(self, data):
+    def __init__(self, data):
         self.data = data
 
 
@@ -91,9 +91,9 @@ class RemoteRequestPayload:
     def callback_url(self):
         return self._callback_url
 
-    def __int__(self, data):
+    def __init__(self, data: bytearray):
         self._data = data
-        self._request = json.loads(self._data.decode('utf-8'))
+        self._request = json.loads(self._data.data.decode('utf-8'))
         self.validate()
         self.populate()
 
@@ -119,7 +119,7 @@ class RemoteRequestPayload:
             raise Exception('Missing field meter')
 
     def validate_command(self, request):
-        if not 'comand' in request:
+        if not 'command' in request:
             raise Exception('Missing field command')
 
     def validate_code(self, request):
@@ -145,30 +145,35 @@ class RemoteRequestPayload:
             return False
 
     def populate(self):
-        self._action = self._data['action']
-        self._meter = self._data['meter']
-        self._command = self._data['command']
-        self._code = self._data['code']
-        self._callback_url = self._data['callback_url']
+        self._action = self.request['action']
+        self._meter = self.request['meter']
+        self._command = self.request['command']
+        self._code = self.request['code']
+        self._callback_url = self.request['callback_url']
 
         if self._action.upper() == 'WRITE':
-            self._value = self._data['value']
+            self._value = self.request['value']
 
 
-def is_supported_http_request(data: bytearray):
-    supported_verbs = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
-    if any(data.decode('utf-8').upper().startswith(verb)
-           for verb in supported_verbs):
-        if data.decode('utf-8').upper() \
-                .startswith(('GET', 'PUT', 'PATCH', 'DELETE')):
-            raise Exception(f'Unsupported method')
-    return False
+def is_supported_http_request(data: bytearray, logger: Logger):
+    try:
+        supported_verbs = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+        if any(data.decode('utf-8').upper().startswith(verb)
+               for verb in supported_verbs):
+            if data.decode('utf-8').upper() \
+                    .startswith(('GET', 'PUT', 'PATCH', 'DELETE')):
+                raise Exception(f'Unsupported method')
+            return True
+    except Exception as exec:
+        logger.error(f'{exec}')
+        return False
 
 
-def process_http_request(request: HTTPRequest,
-                         reader: StreamReader,
-                         auth_token: str,
-                         redis_params: dict):
+async def process_http_request(request: HTTPRequest,
+                               reader: StreamReader,
+                               auth_token: str,
+                               redis_params: dict,
+                               writer: StreamWriter):
     conn = h11.Connection(h11.SERVER)
     conn.receive_data(request.data)
     while True:
@@ -181,7 +186,7 @@ def process_http_request(request: HTTPRequest,
                 token = extract('Authorization', event.headers)
                 authenticate(token, auth_token)
                 body = conn.next_event()
-                queue(body, redis_params)
+                await queue(body, redis_params, writer)
                 break
             else:
                 raise Exception('Unsupported HTTP method')
@@ -189,23 +194,26 @@ def process_http_request(request: HTTPRequest,
 
 def extract(desired, headers):
     for header in headers:
-        if header[0].upper() == desired.upper():
-            return header[1]
+        if header[0].decode('utf-8').upper() \
+                == desired.upper():
+            return header[1].decode('utf-8')
     raise Exception(f'{desired} header not found!')
 
 
 def authenticate(token, auth_token):
-    if token != auth_token:
-        raise Exception('Invalid token')
+    if token.split('Bearer')[1].strip() != auth_token:
+        raise Exception('Invalid auth token')
 
 
-def queue(data, redis_params: dict):
+async def queue(data: bytearray, redis_params: dict,
+          writer: StreamWriter):
     remote_request = RemoteRequestPayload(data)
-    redis_write(remote_request, redis_params)
+    request_id = redis_write(remote_request, redis_params)
+    await send_response(writer, remote_request, request_id)
 
 
 def redis_write(remote_request: RemoteRequestPayload,
-                redis_params: dict):
+                redis_params: dict) -> int:
     r = redis.Redis(host=redis_params.get('host', '0.0.0.0'),
                     port=redis_params.get('port', 6379),
                     db=redis_params.get('db', 0))
@@ -227,13 +235,14 @@ def redis_write(remote_request: RemoteRequestPayload,
     if value:
         r.set(f'*|{curr_timestamp}', value)
 
+    return curr_timestamp
 
-def send_callback(reading, callback_url: str,
-                  writer: StreamWriter,
+
+def send_callback(reading: dict,
+                  callback_url: str,
                   logger: Logger):
     logger.info(f'Sending callback for {reading} to {callback_url}')
-    headers = { 'Host': 'Heartbeat Server'}
-
+    headers = {'Host': 'Heartbeat Server'}
     data = json.dumps({
         'status': 200,
         'message': reading['reading'],
@@ -244,3 +253,26 @@ def send_callback(reading, callback_url: str,
     resp = requests.post(url=callback_url,
                          data=data, headers=headers)
     logger.info(f'Callback result: status_code {resp.status_code} reason {resp.reason}')
+
+
+async def send_response(writer: StreamWriter,
+                        request: RemoteRequestPayload,
+                        request_id: int):
+    response = json.dumps({
+                            'status': 200,
+                            'request_id': request_id,
+                            'message': f'Scheduled {request.action} for {request.meter}'
+                        }).encode()
+    headers = [
+        ('Host', 'Heartbeat server'),
+        ('Content-length', str(len(response))),
+        ('Content-type', 'application/json')
+    ]
+    conn = h11.Connection(h11.SERVER)
+    output = conn.send(h11.Response(
+        status_code=200,
+        headers=headers
+    ))
+    output += conn.send(h11.Data(data=response))
+    output += conn.send(h11.EndOfMessage())
+    writer.write(output)
