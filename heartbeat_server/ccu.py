@@ -24,15 +24,14 @@ async def process_heartbeat(reader: StreamReader,
     if logger:
         logger.info(f'\nccu.ccu_handler(): Received heartbeat {heartbeat}')
 
-    reply_resp = await heartbeat.send_heartbeat_reply(logger, reader, writer)
-    logger.info('Heartbeat reply response: ' + ''.join('{:02x}'
-                                                       .format(x) for x in reply_resp))
+    heartbeat.send_heartbeat_reply(logger, writer)
+
     ccu_no = heartbeat.device_details.decode()
 
     if ccu_no:
         readings = await read_meters(reader, writer,
-                               ccu_no, logger,
-                               redis_params)
+                                     ccu_no, logger,
+                                     redis_params)
         await send_readings(readings, ccu_no,
                             hes_server_url,
                             auth_token,
@@ -124,12 +123,17 @@ async def get_reading(reading_cmd,
                       logger=None):
     tries = 0
     response = None
+    BUFFER_SIZE = 1024
     while not response and tries < 3:
         try:
             if logger is not None:
                 logger.info("Attempt: %s", tries + 1)
             writer.write(reading_cmd)
-            response = await reader.read(100)
+            while True:
+                response = await reader.read(BUFFER_SIZE)
+                if len(response) != BUFFER_SIZE:
+                    response += await reader.read(BUFFER_SIZE)
+                break
             logger.info(f'\nResponse {response} ' + ''.join('{:02x}'
                                                             .format(x) for x in response))
             meter_reading = MeterReading(response, logger)

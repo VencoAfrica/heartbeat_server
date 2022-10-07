@@ -208,7 +208,8 @@ def authenticate(token, auth_token):
 async def queue(data: bytearray, redis_params: dict,
           writer: StreamWriter):
     remote_request = RemoteRequestPayload(data)
-    request_id = redis_write(remote_request, redis_params)
+    # request_id = redis_write(remote_request, redis_params)
+    request_id = (round(time.time() * 1000))
     await send_response(writer, remote_request, request_id)
 
 
