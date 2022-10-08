@@ -22,9 +22,11 @@ async def process_heartbeat(reader: StreamReader,
                             auth_token: str,
                             logger: Logger):
     if logger:
-        logger.info(f'\nccu.ccu_handler(): Received heartbeat {heartbeat}')
+        logger.info(f'Received heartbeat {heartbeat}')
 
-    heartbeat.send_heartbeat_reply(logger, writer)
+    reply_resp = await heartbeat.send_heartbeat_reply(logger, reader, writer)
+    logger.info('Heartbeat reply response: ' + ''.join('{:02x}'
+                                                       .format(x) for x in reply_resp))
 
     ccu_no = heartbeat.device_details.decode()
 
@@ -37,12 +39,11 @@ async def process_heartbeat(reader: StreamReader,
                             auth_token,
                             logger)
     else:
-        logger.info(f'CCU not found in heartbeat {heartbeat}')
+        logger.info(f'CCU not found for heartbeat {heartbeat}')
 
 
 async def read_meters(reader: StreamReader, writer: StreamWriter,
-                      ccu_no: str, logger: Logger,
-                      redis_params: dict):
+                      ccu_no: str, logger: Logger, redis_params: dict):
     logger.info(f'Preparing to read meters for {ccu_no}')
     read_cmds = get_reading_cmds(ccu_no, redis_params, logger)
     readings = []
@@ -146,7 +147,6 @@ async def get_reading(reading_cmd,
                 return Heartbeat(response, logger)
             else:
                 raise Exception(e)
-            break
         finally:
             tries += 1
 

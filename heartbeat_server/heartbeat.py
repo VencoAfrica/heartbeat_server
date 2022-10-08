@@ -116,12 +116,14 @@ class Heartbeat:
     def is_valid(self):
         return not all(not val for val in self.parse().values())
 
-    def send_heartbeat_reply(self, logger: Logger,
-                             writer: StreamWriter):
+    async def send_heartbeat_reply(self, logger: Logger,
+                                   reader: StreamReader,
+                                   writer: StreamWriter):
         reply = self.get_reply()
         logger.info('Heartbeat Reply: ' + ''.join('{:02x}'
                                                   .format(x) for x in reply))
         writer.write(reply)
+        return await reader.read(100)
 
 
 async def read_heartbeat(reader: StreamReader, logger: Logger):
