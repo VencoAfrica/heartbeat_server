@@ -47,6 +47,7 @@ async def read_meters(reader: StreamReader, writer: StreamWriter,
     logger.info(f'Preparing to read meters for {ccu_no}')
     read_cmds = get_reading_cmds(ccu_no, redis_params, logger)
     readings = []
+    reading = None
 
     for read_cmd in read_cmds:
         try:
@@ -75,7 +76,7 @@ async def read_meters(reader: StreamReader, writer: StreamWriter,
                     send_callback(read, callback_url, logger)
 
         except Exception as e:
-            if isinstance('Heartbeat'):
+            if isinstance(reading, Heartbeat):
                 heartbeat = await read_heartbeat(reader, logger)
                 await process_heartbeat(heartbeat)
             else:
