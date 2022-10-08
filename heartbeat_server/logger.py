@@ -20,7 +20,7 @@ def get_logger(log: dict = None):
         except FileExistsError:
             pass
         file_handler = RotatingFileHandler(
-            LOG_FILENAME, maxBytes=100000, backupCount=20)
+            LOG_FILENAME, maxBytes=1000000, backupCount=50)
         file_handler.setFormatter(formatter)
 
         console_handler = logging.StreamHandler(sys.stdout)

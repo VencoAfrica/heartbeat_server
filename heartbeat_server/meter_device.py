@@ -14,11 +14,13 @@ REMOTE_REQUEST_DELIMITER = '*|'
 
 
 def get_reading_cmds(ccu_no, redis_params, logger: Logger):
+    NO_CALLBACK_URL = None
     read_commands = [
         (
             meter,
             cmd,
-            read_value(obis_code)
+            read_value(obis_code),
+            NO_CALLBACK_URL
         )
         for cmd, obis_code in obis_codes.items()
         for meter in ccu_meters.get(ccu_no)
@@ -46,12 +48,12 @@ def get_remote_request_commands(redis_params, logger: Logger):
     Write
     ------
     key: *|<timestamp>
-    value: [W]:meter_no:cmd:OBIS_Code:value
+    value: [W]:meter_no:cmd:OBIS_Code:value:callback_url
 
     Read
     -----
     key: *|<timestamp>
-    value: [R]:meter_no:cmd:OBIS_Code
+    value: [R]:meter_no:cmd:OBIS_Code:callback_url
 
     """
     remote_commands = []
@@ -67,6 +69,7 @@ def get_remote_request_commands(redis_params, logger: Logger):
             meter_no = command[1]
             logical_command = command[2]
             obis_code = command[3]
+            callback_url = command[-1]
 
             if mode.upper() == 'W':
                 value = command[4]
@@ -74,7 +77,8 @@ def get_remote_request_commands(redis_params, logger: Logger):
                     (
                         meter_no,
                         logical_command,
-                        write_value(obis_code, value)
+                        write_value(obis_code, value),
+                        callback_url
                     )
                 )
             elif mode.upper() == 'R':
@@ -82,7 +86,8 @@ def get_remote_request_commands(redis_params, logger: Logger):
                     (
                         meter_no,
                         logical_command,
-                        read_value(obis_code)
+                        read_value(obis_code),
+                        callback_url
                     )
                 )
             r.delete(key)

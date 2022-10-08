@@ -11,6 +11,8 @@ from .hes import generate_reading_cmd
 from .meter_device import get_reading_cmds
 from .meter_reading import MeterReading
 
+from .http_requests import HTTPRequest, process_http_request, send_callback
+
 
 async def process_heartbeat(reader: StreamReader,
                             writer: StreamWriter,
@@ -20,35 +22,36 @@ async def process_heartbeat(reader: StreamReader,
                             auth_token: str,
                             logger: Logger):
     if logger:
-        logger.info(f'\nccu.ccu_handler(): Received heartbeat {heartbeat}')
+        logger.info(f'Received heartbeat {heartbeat}')
 
     reply_resp = await heartbeat.send_heartbeat_reply(logger, reader, writer)
     logger.info('Heartbeat reply response: ' + ''.join('{:02x}'
                                                        .format(x) for x in reply_resp))
+
     ccu_no = heartbeat.device_details.decode()
 
     if ccu_no:
-        readings = read_meters(reader, writer,
-                               ccu_no, logger,
-                               redis_params)
+        readings = await read_meters(reader, writer,
+                                     ccu_no, logger,
+                                     redis_params)
         await send_readings(readings, ccu_no,
                             hes_server_url,
                             auth_token,
                             logger)
     else:
-        logger.info(f'CCU not found in heartbeat {heartbeat}')
+        logger.info(f'CCU not found for heartbeat {heartbeat}')
 
 
-def read_meters(reader: StreamReader, writer: StreamWriter,
-                ccu_no: str, logger: Logger,
-                redis_params: dict):
+async def read_meters(reader: StreamReader, writer: StreamWriter,
+                      ccu_no: str, logger: Logger, redis_params: dict):
     logger.info(f'Preparing to read meters for {ccu_no}')
     read_cmds = get_reading_cmds(ccu_no, redis_params, logger)
     readings = []
+    reading = None
 
     for read_cmd in read_cmds:
         try:
-            meter, cmd, obis_code = read_cmd
+            meter, cmd, obis_code, callback_url = read_cmd
             read = {}
             logger.info(f'Reading {meter} {obis_code} ' +
                         ''.join('{:02x}'
@@ -69,10 +72,13 @@ def read_meters(reader: StreamReader, writer: StreamWriter,
                 read['timestamp'] = datetime.now().isoformat()
                 readings.append(read)
 
+                if callback_url:
+                    send_callback(read, callback_url, logger)
+
         except Exception as e:
-            if isinstance('Heartbeat'):
+            if isinstance(reading, Heartbeat):
                 heartbeat = await read_heartbeat(reader, logger)
-                process_heartbeat(heartbeat)
+                await process_heartbeat(heartbeat)
             else:
                 logger.error(f'Invalid returned read {e}')
                 continue
@@ -98,11 +104,17 @@ async def send_readings(readings: list,
 
 async def ccu_handler(reader: StreamReader, writer: StreamWriter,
                       hes_server_url: str, redis_params: dict,
-                      auth_token: str, logger: Logger):
+                      auth_token: str, hes_auth_token: str,
+                      logger: Logger):
     heartbeat = await read_heartbeat(reader, logger)
-    await process_heartbeat(reader, writer, heartbeat,
-                            redis_params, hes_server_url,
-                            auth_token, logger)
+
+    if isinstance(heartbeat, HTTPRequest):
+        await process_http_request(heartbeat, reader, auth_token,
+                                   redis_params, writer)
+    elif isinstance(heartbeat, Heartbeat):
+        await process_heartbeat(reader, writer, heartbeat,
+                                redis_params, hes_server_url,
+                                hes_auth_token, logger)
     writer.close()
 
 
@@ -113,12 +125,17 @@ async def get_reading(reading_cmd,
                       logger=None):
     tries = 0
     response = None
+    BUFFER_SIZE = 1024
     while not response and tries < 3:
         try:
             if logger is not None:
                 logger.info("Attempt: %s", tries + 1)
             writer.write(reading_cmd)
-            response = await reader.read(100)
+            while True:
+                response = await reader.read(BUFFER_SIZE)
+                if len(response) != BUFFER_SIZE:
+                    response += await reader.read(BUFFER_SIZE)
+                break
             logger.info(f'\nResponse {response} ' + ''.join('{:02x}'
                                                             .format(x) for x in response))
             meter_reading = MeterReading(response, logger)
@@ -131,7 +148,6 @@ async def get_reading(reading_cmd,
                 return Heartbeat(response, logger)
             else:
                 raise Exception(e)
-            break
         finally:
             tries += 1
 
