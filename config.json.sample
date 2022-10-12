@@ -4,7 +4,7 @@
     "port": 18901,
     "name": "ccu"
   },
-  "hes_server_url": "http://frappe.localhost:8001/api/method/meter_client.api.v1.receive_readings",
+  "hes_server_url": "https://sol.01101960.xyz/api/method/meter_client.api.v1.receive_readings",
   "log": {
     "file": "app.log",
     "level": 10,
