@@ -3,7 +3,7 @@ import json
 import h11
 import time
 import requests
-
+import sqlite3
 from asyncio.streams import StreamReader, StreamWriter
 from h11 import Request
 from urllib.parse import urlparse
@@ -15,7 +15,77 @@ class HTTPRequest:
     def __init__(self, data):
         self.data = data
 
+class AddMeterRequestPayload:
+    '''
+    A remote request
 
+        {
+            "ccu": "{ccu_no}",
+            "meters": "{comma separated set of meters}",
+            "callback_url": "https://fcb3-105-160-5-15.ngrok.io"
+        }
+    '''
+
+    @property
+    def data(self):
+        return self._data
+
+    @property
+    def request(self):
+        return self._request
+
+    @property
+    def ccu(self):
+        return self._ccu
+
+    @property
+    def meters(self):
+        return self._meters
+
+    @property
+    def callback_url(self):
+        return self._callback_url
+
+    def __init__(self, data: bytearray):
+        self._data = data
+        self._request = json.loads(self._data.data.decode('utf-8'))
+        self.validate()
+        self.populate()
+        
+    def validate(self):
+        self.validate_ccu(self._request)
+        self.validate_meters(self._request)
+        self.validate_callback_url(self._request)
+
+
+    def validate_ccu(self, request):
+        if not 'ccu' in request:
+            raise Exception('Missing field ccu')
+
+    def validate_meters(self, request):
+        if not 'meter' in request:
+            raise Exception('Missing field meter')
+
+    def validate_callback_url(self, request):
+        if 'callback_url' in request:
+            callback_url = request['callback_url']
+            if not self.is_url(callback_url):
+                raise Exception(f'Invalid callback url {callback_url}')
+
+    def is_url(self, url: str):
+        try:
+            result = urlparse(url)
+            return all([result.scheme, result.netloc])
+        except ValueError:
+            return False
+    
+    def populate(self):
+        self._meter = self.request['meter']
+        self._ccu = self.request['ccu']
+        self._callback_url = self.request['callback_url']
+
+    
+    
 class RemoteRequestPayload:
     """
     A remote request denotes a POST request to read
@@ -168,6 +238,16 @@ def is_supported_http_request(data: bytearray, logger: Logger):
         logger.error(f'Exception is_supported_http_request: {exec}')
         return False
 
+def inspect_http_content_type(body):
+    try:
+        request = json.loads(body.decode('utf-8'))
+        if 'command' in request:
+            return 'remote'
+        if 'ccu' in request:
+            return 'add_meter'
+    except Exception as exec:
+        logger.error(f'Exception inspect_http_content_type: {exec}')
+        return None
 
 async def process_http_request(request: HTTPRequest,
                                reader: StreamReader,
@@ -186,8 +266,12 @@ async def process_http_request(request: HTTPRequest,
                 token = extract('Authorization', event.headers)
                 authenticate(token, auth_token)
                 body = conn.next_event()
-                await queue(body, redis_params, writer)
-                break
+                content_type = inspect_http_content_type(body.data)
+                if content_type == 'remote':
+                    await queue(body, redis_params, writer)
+                elif content_type == 'add_meter':
+                    request = json.loads(body.decode('utf-8'))
+                    # add to sqlite db'
             else:
                 raise Exception('Unsupported HTTP method')
 
@@ -204,6 +288,12 @@ def authenticate(token, auth_token):
     if token.split('Bearer')[1].strip() != auth_token:
         raise Exception('Invalid auth token')
 
+async def add_meter_queue(data: bytearray, redis_params: dict, writer: StreamWriter):
+    remote_add = AddMeterRequestPayload(data)
+    # add to sqlite db
+
+    # add to redis queue
+    # send response
 
 async def queue(data: bytearray, redis_params: dict,
           writer: StreamWriter):
