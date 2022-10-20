@@ -1,9 +1,10 @@
+from asyncio.log import logger
 import redis
 import json
 import h11
 import time
 import requests
-import sqlite3
+from .db import DB
 from asyncio.streams import StreamReader, StreamWriter
 from h11 import Request
 from urllib.parse import urlparse
@@ -63,9 +64,12 @@ class AddMeterRequestPayload:
             raise Exception('Missing field ccu')
 
     def validate_meters(self, request):
-        if not 'meter' in request:
-            raise Exception('Missing field meter')
-
+        if not 'meters' in request:
+            raise Exception('Missing field meters')
+        meters = request['meters']
+        if not isinstance(meters, list):
+            raise Exception('Meters must be a list')
+ 
     def validate_callback_url(self, request):
         if 'callback_url' in request:
             callback_url = request['callback_url']
@@ -80,11 +84,10 @@ class AddMeterRequestPayload:
             return False
     
     def populate(self):
-        self._meter = self.request['meter']
-        self._ccu = self.request['ccu']
-        self._callback_url = self.request['callback_url']
+        self._ccu = self._request['ccu']
+        self._meters = self._request['meters']
+        self._callback_url = self._request.get('callback_url', None)
 
-    
     
 class RemoteRequestPayload:
     """
@@ -243,8 +246,10 @@ def inspect_http_content_type(body):
         request = json.loads(body.decode('utf-8'))
         if 'command' in request:
             return 'remote'
-        if 'ccu' in request:
-            return 'add_meter'
+        if 'meters' in request:
+            return 'ccu'
+        if 'command' not in request and 'meters' not in request:
+            raise Exception('Invalid request')
     except Exception as exec:
         logger.error(f'Exception inspect_http_content_type: {exec}')
         return None
@@ -271,7 +276,7 @@ async def process_http_request(request: HTTPRequest,
                     await queue(body, redis_params, writer)
                 elif content_type == 'add_meter':
                     request = json.loads(body.decode('utf-8'))
-                    # add to sqlite db'
+                    await add_meter_queue(request, redis_params, writer)
             else:
                 raise Exception('Unsupported HTTP method')
 
@@ -288,13 +293,6 @@ def authenticate(token, auth_token):
     if token.split('Bearer')[1].strip() != auth_token:
         raise Exception('Invalid auth token')
 
-async def add_meter_queue(data: bytearray, redis_params: dict, writer: StreamWriter):
-    remote_add = AddMeterRequestPayload(data)
-    # add to sqlite db
-
-    # add to redis queue
-    # send response
-
 async def queue(data: bytearray, redis_params: dict,
           writer: StreamWriter):
     remote_request = RemoteRequestPayload(data)
@@ -302,6 +300,13 @@ async def queue(data: bytearray, redis_params: dict,
     message = f'Scheduled {remote_request.action} for {remote_request.meter}'
     await send_response(writer, request_id, 200, message)
 
+async def add_meter_queue(data: bytearray, redis_params: dict, writer: StreamWriter):
+    remote_add = AddMeterRequestPayload(data)
+    heartbeat_db = DB('heartbeat.db')
+    heartbeat_db.add(remote_add.ccu, remote_add.meters, remote_add.callback_url)
+    request_id = redis_write(remote_add, redis_params)
+    message = f'Meter added for {remote_add.ccu}'
+    await send_response(writer, request_id, 200, message)
 
 def redis_write(remote_request: RemoteRequestPayload,
                 redis_params: dict) -> int:
