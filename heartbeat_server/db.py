@@ -1,5 +1,5 @@
 import sqlite3
-
+import re
 from requests import delete
 
 class Db:
@@ -26,13 +26,17 @@ class Db:
         self._db.commit()
         
     def add_ccu(self, ccu: str):
-        self._db.execute('CREATE TABLE IF NOT EXISTS ccu (id INTEGER PRIMARY KEY, ccu VARCHAR, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+        if not re.match(r'^MTRK[0-9]{12}$', ccu):
+            raise Exception(f'Invalid ccu: {ccu}')
+        self._db.execute('CREATE TABLE IF NOT EXISTS ccu (id INTEGER PRIMARY KEY, ccu VARCHAR UNIQUE, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
         self._db.execute('INSERT OR IGNORE INTO ccu (ccu) VALUES (?)', (ccu,))
         return self._db.execute('SELECT id FROM ccu WHERE ccu = ?', (ccu,)).fetchone()[0]
     
     def add_meters(self, ccu_id: int, meters: list):
-        self._db.execute('CREATE TABLE IF NOT EXISTS meters (id INTEGER PRIMARY KEY, meter VARCHAR, ccu_id INTEGER REFERENCES ccus(id), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+        self._db.execute('CREATE TABLE IF NOT EXISTS meters (id INTEGER PRIMARY KEY, meter VARCHAR UNIQUE, ccu_id INTEGER REFERENCES ccus(id), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
         for meter in meters:
+            if not re.match(r'^[0-9]{12}$', meter):
+                raise Exception(f'Invalid meter: {meter}')
             self._db.execute('INSERT OR IGNORE INTO meters (meter, ccu_id) VALUES (?, ?)', (meter, ccu_id))
 
     def add(self, ccu: str, meter: list, callback_url: str) -> bool:
@@ -43,11 +47,13 @@ class Db:
         index = self.add_ccu(ccu)
         self.add_meters(index, meter)
 
-    def get_ccu_and_meters(self, ccu: str) -> dict:
+    def get_ccu_and_meters(self, ccu: str):
         """
         Get a ccu and its meters from the database.
         """
         ccu = self._db.execute('SELECT * FROM ccu WHERE ccu = ?', (ccu,)).fetchone()
+        if not ccu:
+            raise Exception(f'No ccu found: {ccu}')
         meters = self._db.execute('SELECT * FROM meters WHERE ccu_id = ?', (ccu['id'],)).fetchall()
         return {
             'ccu': ccu,

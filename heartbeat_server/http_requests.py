@@ -4,7 +4,7 @@ import json
 import h11
 import time
 import requests
-from .db import DB
+from .db import Db
 from asyncio.streams import StreamReader, StreamWriter
 from h11 import Request
 from urllib.parse import urlparse
@@ -15,6 +15,13 @@ class HTTPRequest:
 
     def __init__(self, data):
         self.data = data
+
+def is_url(url: str):
+    try:
+        result = urlparse(url)
+        return all([result.scheme, result.netloc])
+    except ValueError:
+        return False
 
 class AddMeterRequestPayload:
     '''
@@ -73,15 +80,8 @@ class AddMeterRequestPayload:
     def validate_callback_url(self, request):
         if 'callback_url' in request:
             callback_url = request['callback_url']
-            if not self.is_url(callback_url):
+            if not is_url(callback_url):
                 raise Exception(f'Invalid callback url {callback_url}')
-
-    def is_url(self, url: str):
-        try:
-            result = urlparse(url)
-            return all([result.scheme, result.netloc])
-        except ValueError:
-            return False
     
     def populate(self):
         self._ccu = self._request['ccu']
@@ -207,15 +207,8 @@ class RemoteRequestPayload:
     def validate_callback_url(self, request):
         if 'callback_url' in request:
             callback_url = request['callback_url']
-            if not self.is_url(callback_url):
+            if not is_url(callback_url):
                 raise Exception(f'Invalid callback url {callback_url}')
-
-    def is_url(self, url: str):
-        try:
-            result = urlparse(url)
-            return all([result.scheme, result.netloc])
-        except ValueError:
-            return False
 
     def populate(self):
         self._action = self.request['action']
@@ -242,17 +235,13 @@ def is_supported_http_request(data: bytearray, logger: Logger):
         return False
 
 def inspect_http_content_type(body):
-    try:
-        request = json.loads(body.decode('utf-8'))
-        if 'command' in request:
-            return 'remote'
-        if 'meters' in request:
-            return 'ccu'
-        if 'command' not in request and 'meters' not in request:
-            raise Exception('Invalid request')
-    except Exception as exec:
-        logger.error(f'Exception inspect_http_content_type: {exec}')
-        return None
+    request = json.loads(body.decode('utf-8'))
+    if 'command' in request:
+        return 'remote'
+    if 'meters' in request:
+        return 'ccu'
+    if 'command' not in request and 'meters' not in request:
+        raise Exception('Invalid request')
 
 async def process_http_request(request: HTTPRequest,
                                reader: StreamReader,
@@ -302,11 +291,38 @@ async def queue(data: bytearray, redis_params: dict,
 
 async def add_meter_queue(data: bytearray, redis_params: dict, writer: StreamWriter):
     remote_add = AddMeterRequestPayload(data)
-    heartbeat_db = DB('heartbeat.db')
+    heartbeat_db = Db('heartbeat.db')
     heartbeat_db.add(remote_add.ccu, remote_add.meters, remote_add.callback_url)
     request_id = redis_write(remote_add, redis_params)
     message = f'Meter added for {remote_add.ccu}'
     await send_response(writer, request_id, 200, message)
+
+# add meter to redis
+def proposed_redis_write(request, redis_params):
+    r = redis.Redis(host=redis_params.get('host', '0.0.0.0'),
+                    port=redis_params.get('port', 6379),
+                    db=redis_params.get('db', 0))
+    value = None
+    curr_timestamp = (round(time.time() * 1000))
+    if isinstance(request, RemoteRequestPayload):
+        value = {
+            'action': request.action,
+            'meter': request.meter,
+            'command': request.command,
+            'code': request.code,
+            'value': request.value,
+            'callback_url': request.callback_url,
+            'timestamp': curr_timestamp
+        }
+    elif isinstance(request, AddMeterRequestPayload):
+        value = {
+            'ccu': request.ccu,
+            'meters': request.meters,
+            'callback_url': request.callback_url,
+            'timestamp': curr_timestamp
+        }
+    r.set(request.request_id, json.dumps(value))
+    return request.request_id
 
 def redis_write(remote_request: RemoteRequestPayload,
                 redis_params: dict) -> int:
