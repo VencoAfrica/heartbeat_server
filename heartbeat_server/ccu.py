@@ -17,6 +17,7 @@ async def ccu_handler(reader: StreamReader,
                       writer: StreamWriter,
                       hes_server_url: str,
                       redis_params: dict,
+                      db_params: dict,
                       hes_auth_token: str,
                       auth_token: str,
                       logger: Logger):
@@ -27,7 +28,7 @@ async def ccu_handler(reader: StreamReader,
     if isinstance(heartbeat, HTTPRequest):
         try:
             await process_http_request(heartbeat, reader, auth_token,
-                                   redis_params, writer)
+                                   redis_params, db_params, writer)
         except Exception as e:
             await send_response(writer, 0, 400, str(e))
     else:

@@ -1,6 +1,5 @@
 import sqlite3
 import re
-from requests import delete
 
 class Db:
     """
@@ -39,7 +38,7 @@ class Db:
                 raise Exception(f'Invalid meter: {meter}')
             self._db.execute('INSERT OR IGNORE INTO meters (meter, ccu_id) VALUES (?, ?)', (meter, ccu_id))
 
-    def add(self, ccu: str, meter: list, callback_url: str) -> bool:
+    def add(self, ccu: str, meter: list) -> bool:
         """
         Add a new ccu or meter list to the database.
         """

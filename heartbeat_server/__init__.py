@@ -18,6 +18,7 @@ async def heartbeat_server(params=None):
                      params.get('hes').get('server_url',
                                            'localhost/receive_readings'),
                      params.get('redis', {}),
+                     params.get('db', {}),
                      params.get('hes').get('auth_token'),
                      params.get('auth_token'),
                      ccu, logger)
@@ -62,6 +63,7 @@ def load_config(filename="config.json"):
 
 def ccu(hes_server_url: str,
         redis_params: dict,
+        db_params: dict,
         hes_auth_token: str,
         auth_token: str,
         logger: Logger):
@@ -69,6 +71,7 @@ def ccu(hes_server_url: str,
         await ccu_handler(reader, writer,
                           hes_server_url,
                           redis_params,
+                          db_params,
                           hes_auth_token,
                           auth_token,
                           logger)

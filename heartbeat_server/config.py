@@ -8,6 +8,9 @@ config_content = {
     "port": 18901,
     "name": "ccu"
   },
+  "db": {
+    "name": "heartbeat.db",
+  },
   "hes_server_url": "http://localhost:8001/api/method/meter_client.api.v1.receive_readings",
   "log": {
     "file": "app.log",

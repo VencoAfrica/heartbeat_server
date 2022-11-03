@@ -235,7 +235,7 @@ def is_supported_http_request(data: bytearray, logger: Logger):
         return False
 
 def inspect_http_content_type(body):
-    request = json.loads(body.decode('utf-8'))
+    request = json.loads(body.data.decode('utf-8'))
     if 'command' in request:
         return 'remote'
     if 'meters' in request:
@@ -247,6 +247,7 @@ async def process_http_request(request: HTTPRequest,
                                reader: StreamReader,
                                auth_token: str,
                                redis_params: dict,
+                               db_params:dict,
                                writer: StreamWriter):
     conn = h11.Connection(h11.SERVER)
     conn.receive_data(request.data)
@@ -260,12 +261,11 @@ async def process_http_request(request: HTTPRequest,
                 token = extract('Authorization', event.headers)
                 authenticate(token, auth_token)
                 body = conn.next_event()
-                content_type = inspect_http_content_type(body.data)
+                content_type = inspect_http_content_type(body)
                 if content_type == 'remote':
                     await queue(body, redis_params, writer)
                 elif content_type == 'add_meter':
-                    request = json.loads(body.decode('utf-8'))
-                    await add_meter_queue(request, redis_params, writer)
+                    await add_meter_queue(body, redis_params, writer, db_params)
             else:
                 raise Exception('Unsupported HTTP method')
 
@@ -289,16 +289,17 @@ async def queue(data: bytearray, redis_params: dict,
     message = f'Scheduled {remote_request.action} for {remote_request.meter}'
     await send_response(writer, request_id, 200, message)
 
-async def add_meter_queue(data: bytearray, redis_params: dict, writer: StreamWriter):
+async def add_meter_queue(data: bytearray, redis_params: dict, writer: StreamWriter, db_params: dict):
     remote_add = AddMeterRequestPayload(data)
-    heartbeat_db = Db('heartbeat.db')
+    # get db name from config.json file
+    heartbeat_db = db_params.get('name')  
     heartbeat_db.add(remote_add.ccu, remote_add.meters, remote_add.callback_url)
-    request_id = redis_write(remote_add, redis_params)
+    request_id = addmeter_redis_write(remote_add, redis_params)
     message = f'Meter added for {remote_add.ccu}'
     await send_response(writer, request_id, 200, message)
 
 # add meter to redis
-def proposed_redis_write(request, redis_params):
+def addmeter_redis_write(request, redis_params):
     r = redis.Redis(host=redis_params.get('host', '0.0.0.0'),
                     port=redis_params.get('port', 6379),
                     db=redis_params.get('db', 0))
