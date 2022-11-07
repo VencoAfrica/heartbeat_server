@@ -46,7 +46,7 @@ class Db:
         index = self.add_ccu(ccu)
         self.add_meters(index, meter)
 
-    def get_ccu_and_meters(self, ccu: str):
+    def get_meters(self, ccu: str):
         """
         Get a ccu and its meters from the database.
         """
@@ -54,10 +54,8 @@ class Db:
         if not ccu:
             raise Exception(f'No ccu found: {ccu}')
         meters = self._db.execute('SELECT * FROM meters WHERE ccu_id = ?', (ccu['id'],)).fetchall()
-        return {
-            'ccu': ccu,
-            'meters': meters
-        }
+        return meters
+
 
     def update_ccu(self, old_ccu: str, new_ccu: str):
         """
