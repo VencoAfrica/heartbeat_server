@@ -3,7 +3,6 @@ from __future__ import unicode_literals
 from iec62056_21.messages import CommandMessage
 
 from .codes import obis_codes
-# get meter from db
 from .db import Db
 from logging import Logger
 
@@ -15,7 +14,7 @@ REMOTE_REQUEST_DELIMITER = '*|'
 
 
 def get_reading_cmds(ccu_no, redis_params, logger: Logger):
-    meters = Db.get_ccu_and_meters(ccu_no)
+    meters = Db.get_meters(ccu_no)
     NO_CALLBACK_URL = None
     REQUEST_ID = None
     read_commands = [
