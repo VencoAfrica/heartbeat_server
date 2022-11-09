@@ -13,7 +13,7 @@ class Db:
         return self._db
 
     def __init__(self, db_name: str):
-        self._db = sqlite3.connect(db_name)
+        self._db = sqlite3.connect(db_name, isolation_level=None)
         self._db.row_factory = sqlite3.Row
         self._cursor = self._db.cursor()
 

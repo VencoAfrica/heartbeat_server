@@ -264,7 +264,7 @@ async def process_http_request(request: HTTPRequest,
                 content_type = inspect_http_content_type(body)
                 if content_type == 'remote':
                     await queue(body, redis_params, writer)
-                elif content_type == 'add_meter':
+                elif content_type == 'ccu':
                     await add_meter_queue(body, redis_params, writer, db_params)
             else:
                 raise Exception('Unsupported HTTP method')
@@ -291,9 +291,9 @@ async def queue(data: bytearray, redis_params: dict,
 
 async def add_meter_queue(data: bytearray, redis_params: dict, writer: StreamWriter, db_params: dict):
     remote_add = AddMeterRequestPayload(data)
-    # get db name from config.json file
-    heartbeat_db = db_params.get('name')  
-    heartbeat_db.add(remote_add.ccu, remote_add.meters, remote_add.callback_url)
+    heartbeat_name = db_params.get('name')
+    heartbeat_db = Db(heartbeat_name)
+    heartbeat_db.add(remote_add.ccu, remote_add.meters)
     request_id = addmeter_redis_write(remote_add, redis_params)
     message = f'Meter added for {remote_add.ccu}'
     await send_response(writer, request_id, 200, message)
@@ -322,9 +322,10 @@ def addmeter_redis_write(request, redis_params):
             'callback_url': request.callback_url,
             'timestamp': curr_timestamp
         }
-    r.set(request.request_id, json.dumps(value))
-    return request.request_id
+    if value:
+        r.set(f'*|{curr_timestamp}', json.dumps(value))
 
+    return curr_timestamp
 def redis_write(remote_request: RemoteRequestPayload,
                 redis_params: dict) -> int:
     _d = '*|'
