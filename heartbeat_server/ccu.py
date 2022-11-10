@@ -40,7 +40,7 @@ async def ccu_handler(reader: StreamReader,
 
         if ccu_no:
             logger.info(f'Preparing to read meters for {ccu_no}')
-            read_cmds = get_reading_cmds(ccu_no, redis_params, logger)
+            read_cmds = get_reading_cmds(ccu_no, db_params ,redis_params, logger)
             readings = []
 
             for read_cmd in read_cmds:
