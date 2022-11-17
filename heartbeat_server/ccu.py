@@ -5,105 +5,104 @@ from asyncio.streams import StreamReader, StreamWriter
 from logging import Logger
 from datetime import datetime
 
-from .heartbeat import Heartbeat, read_heartbeat
+from .heartbeat import read_heartbeat
 from .hes import generate_reading_cmd
 
 from .meter_device import get_reading_cmds
 from .meter_reading import MeterReading
+from .http_requests import HTTPRequest, process_http_request, send_callback, send_response
 
 
-async def process_heartbeat(reader: StreamReader,
-                            writer: StreamWriter,
-                            heartbeat: Heartbeat,
-                            redis_params: dict,
-                            hes_server_url: str,
-                            auth_token: str,
-                            logger: Logger):
+async def ccu_handler(reader: StreamReader,
+                      writer: StreamWriter,
+                      hes_server_url: str,
+                      redis_params: dict,
+                      db_params: dict,
+                      hes_auth_token: str,
+                      auth_token: str,
+                      logger: Logger):
+    heartbeat = await read_heartbeat(reader, logger)
     if logger:
         logger.info(f'\nccu.ccu_handler(): Received heartbeat {heartbeat}')
 
-    reply_resp = await heartbeat.send_heartbeat_reply(logger, reader, writer)
-    logger.info('Heartbeat reply response: ' + ''.join('{:02x}'
-                                                       .format(x) for x in reply_resp))
-    ccu_no = heartbeat.device_details.decode()
-
-    if ccu_no:
-        readings = read_meters(reader, writer,
-                               ccu_no, logger,
-                               redis_params)
-        await send_readings(readings, ccu_no,
-                            hes_server_url,
-                            auth_token,
-                            logger)
-    else:
-        logger.info(f'CCU not found in heartbeat {heartbeat}')
-
-
-def read_meters(reader: StreamReader, writer: StreamWriter,
-                ccu_no: str, logger: Logger,
-                redis_params: dict):
-    logger.info(f'Preparing to read meters for {ccu_no}')
-    read_cmds = get_reading_cmds(ccu_no, redis_params, logger)
-    readings = []
-
-    for read_cmd in read_cmds:
+    if isinstance(heartbeat, HTTPRequest):
         try:
-            meter, cmd, obis_code = read_cmd
-            read = {}
-            logger.info(f'Reading {meter} {obis_code} ' +
-                        ''.join('{:02x}'
-                                .format(x) for x in obis_code))
-            generated_reading_cmd = await generate_reading_cmd(meter, obis_code, logger)
-            logger.info('Reading cmd: ' +
-                        ''.join('{:02x}'
-                                .format(x) for x in generated_reading_cmd))
-            reading = await get_reading(generated_reading_cmd,
-                                        meter,
-                                        reader, writer,
-                                        logger)
-            if reading:
-                logger.info(f'Got reading for {meter}: {reading}')
-                read['meter_no'] = meter
-                read['type'] = cmd
-                read['reading'] = reading
-                read['timestamp'] = datetime.now().isoformat()
-                readings.append(read)
-
+            await process_http_request(heartbeat, reader, auth_token,
+                                   redis_params, db_params, writer)
         except Exception as e:
-            if isinstance('Heartbeat'):
-                heartbeat = await read_heartbeat(reader, logger)
-                process_heartbeat(heartbeat)
-            else:
-                logger.error(f'Invalid returned read {e}')
-                continue
-    return readings
+            await send_response(writer, 0, 400, str(e))
+    else:
+        reply_resp = await heartbeat.send_heartbeat_reply(logger, reader, writer)
+        logger.info('Heartbeat reply response: ' + ''.join('{:02x}'
+                                                           .format(x) for x in reply_resp))
 
+        ccu_no = heartbeat.device_details.decode()
 
-async def send_readings(readings: list,
-                        ccu_no: str,
-                        hes_server_url: str,
-                        auth_token: str,
-                        logger: Logger):
-    logger.info('Preparing to send readings')
-    await send_readings(logger,
-                        hes_server_url,
-                        {
-                            "data": {
-                                'ccu_no': ccu_no,
-                                'readings': readings
+        if ccu_no:
+            logger.info(f'Preparing to read meters for {ccu_no}')
+            read_cmds = get_reading_cmds(ccu_no, db_params ,redis_params, logger)
+            readings = []
+
+            for read_cmd in read_cmds:
+                meter, cmd, obis_code, callback_url, request_id = read_cmd
+                read = {}
+                logger.info(f'Reading {meter} {obis_code} ' + \
+                            ''.join('{:02x}'
+                                    .format(x) for x in obis_code))
+                generated_reading_cmd = await generate_reading_cmd(meter, obis_code, logger)
+                logger.info('Reading cmd: ' + ''.join('{:02x}'
+                                                      .format(x) for x in generated_reading_cmd))
+
+                try:
+                    reading = await get_reading(generated_reading_cmd,
+                                                meter,
+                                                reader, writer,
+                                                logger)
+                    if reading:
+                        logger.info(f'Got reading for {meter}: {reading}')
+                        curr_timestamp = datetime.now().isoformat()
+                        read['meter_no'] = meter
+                        read['type'] = cmd
+                        read['reading'] = reading
+                        read['timestamp'] = curr_timestamp
+                        readings.append(read)
+
+                        if callback_url:
+                            data = {
+                                'status': 200,
+                                'message': reading,
+                                'meter_no': meter,
+                                'request_id': request_id,
+                                'timestamp':  curr_timestamp
                             }
-                        },
-                        auth_token)
+                            send_callback(data, callback_url, logger)
 
+                except Exception as e:
+                    logger.info(f'Error obtaining reading for {meter}')
+                    if callback_url:
+                        data = {
+                            'status': 500,
+                            'message': str(e),
+                            'meter_no': meter,
+                            'request_id': request_id,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                        send_callback(data, callback_url, logger)
 
-async def ccu_handler(reader: StreamReader, writer: StreamWriter,
-                      hes_server_url: str, redis_params: dict,
-                      auth_token: str, logger: Logger):
-    heartbeat = await read_heartbeat(reader, logger)
-    await process_heartbeat(reader, writer, heartbeat,
-                            redis_params, hes_server_url,
-                            auth_token, logger)
-    writer.close()
+            logger.info('Preparing to send readings')
+            await send_readings(logger,
+                                hes_server_url,
+                                {
+                                    "data": {
+                                        'ccu_no': ccu_no,
+                                        'readings': readings
+                                    }
+                                },
+                                hes_auth_token)
+        else:
+            logger.info(f'CCU not found in heartbeat {heartbeat}')
+
+        writer.close()
 
 
 async def get_reading(reading_cmd,
@@ -120,18 +119,14 @@ async def get_reading(reading_cmd,
             writer.write(reading_cmd)
             response = await reader.read(100)
             logger.info(f'\nResponse {response} ' + ''.join('{:02x}'
-                                                            .format(x) for x in response))
+                                            .format(x) for x in response))
             meter_reading = MeterReading(response, logger)
             logger.info(f'\nMeter Reading {meter_reading}')
             return meter_reading.get_value_from_response(meter_no, logger)
         except Exception as e:
-            logger.info(f'Unable to get reading for {meter_no} Exception: {str(e)}')
-            if isinstance(response, (bytes, bytearray)) and \
-                    response.startswith(b'\x00'):
-                return Heartbeat(response, logger)
-            else:
-                raise Exception(e)
-            break
+            msg = f'Unable to get reading for {meter_no} Exception: {str(e)}'
+            logger.info(msg)
+            raise Exception(msg)
         finally:
             tries += 1
 
@@ -165,3 +160,5 @@ async def send_readings(logger, hes_server_url, readings: dict, auth_token):
     logger.info(f'Send readings response {resp.text}')
     if resp.status_code != 200:
         raise Exception(resp.text)
+
+

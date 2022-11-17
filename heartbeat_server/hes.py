@@ -101,3 +101,6 @@ def get_mac(random_no, password, low_or_high='L'):
         raise TypeError('low_or_high should be "H" or "L"')
     crc = CRC(b'\xA5', arr)
     return (int.from_bytes(crc, 'big') + 0x33).to_bytes(2, 'big')[-1:]
+
+
+

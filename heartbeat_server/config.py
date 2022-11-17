@@ -8,7 +8,13 @@ config_content = {
     "port": 18901,
     "name": "ccu"
   },
-  "hes_server_url": "http://localhost:8001/api/method/meter_client.api.v1.receive_readings",
+  "db": {
+    "name": "heartbeat.db"
+  },
+  "hes": {
+    "server_url": "http://localhost:8001/api/method/meter_client.api.v1.receive_readings",
+    "auth_token": "9dc488d5f0eed02:8a73efd1a4508dc"
+  },
   "log": {
     "file": "app.log",
     "level": 10,
@@ -22,8 +28,7 @@ config_content = {
     "host": "0.0.0.0",
     "port": 6379,
     "db": 0
-  },
-  "auth_token": "abcdef:abcdef"
+  }
 }
 
 

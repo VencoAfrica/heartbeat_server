@@ -3,21 +3,22 @@ import json
 from asyncio.streams import StreamReader, StreamWriter
 from datetime import datetime
 from logging import Logger
+from .http_requests import is_supported_http_request, HTTPRequest
 
 
 class Heartbeat:
     def __init__(self, data, logger):
         if isinstance(data, (bytes, bytearray)) and \
-                data.startswith(b'\x00'):
-            logger.info('Received valid heartbeat: '
-                        + ''.join('{:02x}'
-                                  .format(x) for x in data))
+               data.startswith(b'\x00'):
+            logger.info('Received valid heartbeat: ' + ''.join('{:02x}'
+                .format(x) for x in data))
             self._data = data
         else:
-            logger.info('Received invalid heartbeat: '
-                        + ''.join('{:02x}'
-                                  .format(x) for x in data))
+            logger.info('Received invalid heartbeat: ' + ''.join('{:02x}'
+                .format(x) for x in data))
             raise Exception("Badly formed heartbeat")
+
+
 
     def __str__(self) -> str:
         if self._data:
@@ -84,9 +85,9 @@ class Heartbeat:
     @property
     def output_data(self):
         return (self.version_number +
-                self.target_address +
-                self.source_address +
-                self.fixed_format_length +
+                self.target_address + 
+                self.source_address + 
+                self.fixed_format_length + 
                 self.fixed_format)
 
     def parse(self) -> dict:
@@ -120,10 +121,9 @@ class Heartbeat:
                                    writer: StreamWriter):
         reply = self.get_reply()
         logger.info('Heartbeat Reply: ' + ''.join('{:02x}'
-                                                  .format(x) for x in reply))
+                            .format(x) for x in reply))
         writer.write(reply)
         return await reader.read(100)
-
 
 async def read_heartbeat(reader: StreamReader, logger: Logger):
     data = bytearray()
@@ -133,4 +133,11 @@ async def read_heartbeat(reader: StreamReader, logger: Logger):
     frame_length_int = int.from_bytes(frame_length, 'big')
     part = await reader.read(frame_length_int)
     data += part
+
+    if is_supported_http_request(data, logger):
+        return HTTPRequest(data)
+
+
     return Heartbeat(data, logger)
+
+

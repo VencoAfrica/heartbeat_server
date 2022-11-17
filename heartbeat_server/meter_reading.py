@@ -1,16 +1,16 @@
 from iec62056_21.messages import AnswerDataMessage
 from logging import Logger
 
-
 class MeterReading:
     def __init__(self, data, logger):
         if isinstance(data, (bytes, bytearray)) and \
-                data.startswith(b'\x68'):
+               data.startswith(b'\x68'):
             self._data = data
         else:
-            logger.info('Badly formed reading ' + ''.join('{:02x}'
-                                                          .format(x) for x in data))
-            raise Exception("Badly formed reading")
+            error_msg = 'Badly formed reading ' + ''.join('{:02x}'
+                             .format(x) for x in data)
+            logger.info(error_msg)
+            raise Exception(error_msg)
 
     @property
     def data(self):
@@ -20,10 +20,22 @@ class MeterReading:
         resp = self.prep_response(self._data, meter_no)
         try:
             answer = AnswerDataMessage.from_bytes(resp)
+            logger.info('XReading answer type >')
+            logger.info(type(answer))
+            logger.info(answer.data)
+            logger.info(resp.hex())
+            logger.info('XReading answer type <')
+            result = ''
+            # answer_str = answer.decode('utf-8')
+            # logger.info(f'IEC21 return data {answer_str}')
             for data in answer.data:
+                logger.info(f'{data.value}')
                 if data.value:
-                    return data.value
-                return resp.hex()
+                    result += data.value + ' '
+                else:
+                    result += '()'
+            logger.info(f'Result {result}')
+            return result
         except:
             return resp.hex()
 
@@ -38,7 +50,7 @@ class MeterReading:
                 start = 4 if part[0] == 0x81 else 2
                 try:
                     out.append(bytearray(i - 0x33 for i in part[start:-2]))
-                except:
+                except Exception as e:
                     pass
         return out[-1] if out else response
 
