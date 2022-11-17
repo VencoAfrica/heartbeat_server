@@ -4,6 +4,9 @@
     "port": 18901,
     "name": "ccu"
   },
+  "db": {
+    "name": "heartbeat.db"
+  }
   "hes_server_url": "https://sol.01101960.xyz/api/method/meter_client.api.v1.receive_readings",
   "log": {
     "file": "app.log",
