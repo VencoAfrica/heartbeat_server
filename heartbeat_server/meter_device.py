@@ -77,7 +77,6 @@ def get_remote_request_commands(redis_params, meters:list, logger: Logger):
             request_id = str(key, 'utf-8').split(REMOTE_REQUEST_DELIMITER)[1]
             logger.info(f'Request id {request_id}')
 
-
             if meter_no in meters:
                 if mode.upper() == 'W':
                     value = command[4]

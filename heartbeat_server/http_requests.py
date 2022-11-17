@@ -271,4 +271,3 @@ async def send_response(writer: StreamWriter,
     output += conn.send(h11.Data(data=response))
     output += conn.send(h11.EndOfMessage())
     writer.write(output)
-
