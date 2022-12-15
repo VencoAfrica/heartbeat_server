@@ -30,6 +30,8 @@ async def ccu_handler(reader: StreamReader,
                                    redis_params, writer)
         except Exception as e:
             await send_response(writer, 0, 400, str(e))
+        finally:
+            writer.close()
     else:
         reply_resp = await heartbeat.send_heartbeat_reply(logger, reader, writer)
         logger.info('Heartbeat reply response: ' + ''.join('{:02x}'

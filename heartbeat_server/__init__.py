@@ -49,11 +49,6 @@ async def run_server(ccu_params: dict,
         if logger:
             logger.exception("Server loop exception")
         raise
-    finally:
-        if logger:
-            logger.info(f'Stopping {name} on {addr}')
-        server.close()
-
 
 def load_config(filename="config.json"):
     if os.path.exists(filename):
