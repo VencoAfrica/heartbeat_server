@@ -64,43 +64,47 @@ def get_remote_request_commands(redis_params, meters:list, logger: Logger):
                     port=redis_params.get('port', 6379),
                     db=redis_params.get('db', 0))
     for key in r.scan_iter("*"):
-        logger.info(f'Processing redis key {key}')
-        if str(key, 'utf-8') \
-                .startswith(REMOTE_REQUEST_DELIMITER):
-            command = str(r.get(key), 'utf-8').split(REMOTE_REQUEST_DELIMITER)
-            mode = command[0]
-            meter_no = command[1]
-            logical_command = command[2]
-            obis_code = command[3]
-            callback_url = command[-1]
+        try:
+            logger.info(f'Processing redis key {key}')
+            if str(key, 'utf-8') \
+                    .startswith(REMOTE_REQUEST_DELIMITER):
+                command = str(r.get(key), 'utf-8').split(REMOTE_REQUEST_DELIMITER)
+                mode = command[0]
+                meter_no = command[1]
+                logical_command = command[2]
+                obis_code = command[3]
+                callback_url = command[-1]
 
-            request_id = str(key, 'utf-8').split(REMOTE_REQUEST_DELIMITER)[1]
-            logger.info(f'Request id {request_id}')
+                request_id = str(key, 'utf-8').split(REMOTE_REQUEST_DELIMITER)[1]
+                logger.info(f'Request id {request_id}')
 
 
-            if meter_no in meters:
-                if mode.upper() == 'W':
-                    value = command[4]
-                    remote_commands.append(
-                        (
-                            meter_no,
-                            logical_command,
-                            write_value(obis_code, value),
-                            callback_url,
-                            request_id
+                if meter_no in meters:
+                    if mode.upper() == 'W':
+                        value = command[4]
+                        remote_commands.append(
+                            (
+                                meter_no,
+                                logical_command,
+                                write_value(obis_code, value),
+                                callback_url,
+                                request_id
+                            )
                         )
-                    )
-                elif mode.upper() == 'R':
-                    remote_commands.append(
-                        (
-                            meter_no,
-                            logical_command,
-                            read_value(obis_code),
-                            callback_url,
-                            request_id
+                    elif mode.upper() == 'R':
+                        remote_commands.append(
+                            (
+                                meter_no,
+                                logical_command,
+                                read_value(obis_code),
+                                callback_url,
+                                request_id
+                            )
                         )
-                    )
-                r.delete(key)
+                    r.delete(key)
+        except Exception as e:
+            logger.error(f'Error processing redis key {key} {e}')
+            continue
 
     logger.info(f'Remote Commands {remote_commands}')
     return remote_commands
