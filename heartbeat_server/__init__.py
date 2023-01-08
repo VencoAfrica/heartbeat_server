@@ -52,7 +52,6 @@ async def run_server(ccu_params: dict,
             logger.exception("Server loop exception")
         raise
 
-
 def load_config(filename="config.json"):
     if os.path.exists(filename):
         with open(filename, "r") as f:
