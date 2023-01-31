@@ -42,8 +42,18 @@ async def ccu_handler(reader: StreamReader,
 
         if ccu_no:
             logger.info(f'Preparing to read meters for {ccu_no}')
-            read_cmds = get_reading_cmds(ccu_no, db_params ,redis_params, logger)
+            remote_commands = get_reading_cmds(ccu_no, db_params ,redis_params, logger)
+            read_cmds = remote_commands[0]
             readings = []
+
+            for add_meter_command in remote_commands[1]:
+                # processing only add meter commands
+                # Step 1: read the last meter index using the read last meter index OBIS
+                # Step 2: Build the add meter command
+                #   W110.0.0.0(0255<meter_no><index+1>) - meter_device.py.write_value()
+                # Step 3: Execute the add meter command on the CCU
+                # Step 4: Add the meter to the sqlite db and map to the CCU
+                # Step 5: Send the add meter callback
 
             for read_cmd in read_cmds:
                 meter, cmd, obis_code, callback_url, request_id = read_cmd
