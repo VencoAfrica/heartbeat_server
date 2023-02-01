@@ -5,7 +5,7 @@ import os
 from logging import Logger
 from .logger import get_logger
 from .heartbeat import Heartbeat
-from .hes import generate_reading_cmd
+from .hes import generate_ccu_cmd
 from .ccu import ccu_handler
 
 

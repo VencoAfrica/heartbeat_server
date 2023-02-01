@@ -1,13 +1,15 @@
 from random import randrange
 from logging import Logger
 
+from .meter_device import write_value
+
 
 DEFAULT_PASSWORD_LEVEL = 0x01
 DEFAULT_PASSWORD = b"33333333"
 DEFAULT_RANDOM_NUMBER = 31
 
 
-async def generate_reading_cmd(meter_no, command_msg, logger: Logger):
+async def generate_ccu_cmd(meter_no, command_msg, logger: Logger):
     rand = randrange(0, 0xFF-0x33)
     return prep_data(
         meter_no=meter_no,
@@ -18,6 +20,17 @@ async def generate_reading_cmd(meter_no, command_msg, logger: Logger):
         logger=logger
     )
 
+async def generate_last_meter_index_cmd(ccu_no, logger):
+    get_last_meter_obis = '' # insert obis for last metr
+    return generate_ccu_cmd(ccu_no, get_last_meter_obis, logger)
+
+async def generate_add_meter_cmd(meter_no, last_index, logger):
+    add_meter_obis = '' # insert obis for add meter (use write command)
+    data = '' # generate the data by combining the meter type,
+    # meter number and last index
+    return generate_ccu_cmd(add_meter_obis,
+                            write_value(add_meter_obis, data),
+                            logger)
 
 def prep_data(meter_no, pass_lvl, random_no, passw, data, logger: Logger):
     if not isinstance(random_no, bytes):

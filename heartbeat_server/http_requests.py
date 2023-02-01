@@ -315,17 +315,21 @@ async def add_meter_step(ccu, meters: list, last_index, callback_url, auth_token
                                       'Content-type': 'application/json'})
         second_callback = await meter_add_callback(callback_url)
 
-async def process_add_meter_command(ccu_no, meters, db_params, redis_params):
+async def process_add_meter_command(ccu_no, meters,
+                                    callback_url,
+                                    db_params, redis_params):
     # Step 1: Read the last meter index
-    remote_read = {
-        "action": "read",
-        "meter": str(ccu_no),
-        "command": "List Meters",
-        "code": "96.51.90.255",
-        "callback_url": None
-    }
-    redis_send = redis_write(remote_read, redis_params)
-    logger.info(f"process_add_meter queued {redis_send}")
+    for meter in meters:
+        remote_meter_add = {
+            "action": "read",
+            "meter": '{}-{}'.format(ccu_no, meter),
+            "command": "Add Meter",
+            "code": "<OBIS CODE for Add Meter>",
+            "callback_url": callback_url if callback_url else ''
+        }
+        payload = RemoteRequestPayload(remote_meter_add) # convert json payload to bytearray
+        redis_command_id = redis_write(payload, redis_params)
+        logger.info(f"process_add_meter queued {redis_command_id}")
 
 async def queue(data: bytearray, redis_params: dict,
           writer: StreamWriter):
@@ -334,13 +338,18 @@ async def queue(data: bytearray, redis_params: dict,
     message = f'Scheduled {remote_request.action} for {remote_request.meter}'
     await send_response(writer, request_id, 200, message)
 
-async def add_meter_queue(data: bytearray, redis_params: dict, writer: StreamWriter, db_params: dict, auth_token:str):
+async def add_meter_queue(data: bytearray, redis_params: dict,
+                          writer: StreamWriter, db_params: dict,
+                          auth_token:str):
     try:
         remote_add = AddMeterRequestPayload(data)
         request_id = str(uuid4())
         message = f'Scheduled meter addition for {remote_add.ccu}'
         await send_response(writer, request_id, 200, message)
-        await process_add_meter_command(remote_add.ccu, remote_add.meters, db_params, redis_params)
+        await process_add_meter_command(remote_add.ccu,
+                                        remote_add.meters,
+                                        remote_add.callback_url,
+                                        db_params, redis_params)
         # heartbeat_name = db_params.get('name')
         # heartbeat_db = Db(heartbeat_name)
         # heartbeat_db.add(remote_add.ccu, remote_add.meters)
