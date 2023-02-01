@@ -80,11 +80,11 @@ def get_remote_request_commands(redis_params, meters:list, logger: Logger):
                 obis_code = command[3]
                 callback_url = command[-1]
 
-                if obis_code == '': # OBIS for add meter
+                if obis_code == "96.51.90.255":
                     remote_add_meter_commands.append(
                         meter_no,
                         logical_command,
-                        write_value(obis_code, value),
+                        read_value(obis_code),
                         callback_url,
                         request_id
                     )
