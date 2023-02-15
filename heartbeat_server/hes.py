@@ -21,16 +21,21 @@ async def generate_ccu_cmd(meter_no, command_msg, logger: Logger):
     )
 
 async def generate_last_meter_index_cmd(ccu_no, logger):
-    get_last_meter_obis = '' # insert obis for last metr
+    get_last_meter_obis = '96.51.90.255'
     return generate_ccu_cmd(ccu_no, get_last_meter_obis, logger)
 
-async def generate_add_meter_cmd(meter_no, last_index, logger):
-    add_meter_obis = '' # insert obis for add meter (use write command)
-    data = '' # generate the data by combining the meter type,
-    # meter number and last index
-    return generate_ccu_cmd(add_meter_obis,
+async def generate_add_meter_cmd(ccu_no, meter_no, last_index, logger):
+    last_index += 1
+    add_meter_obis = f'96.51.91.{last_index}'
+    data = f'0225{meter_no}'
+    return generate_ccu_cmd(ccu_no,
                             write_value(add_meter_obis, data),
                             logger)
+
+async def generate_commit_meter_cmd(last_index, logger):
+    last_index += 1 
+    commit_meter_obis = '96.51.90.255'
+    return generate_ccu_cmd(commit_meter_obis, write_value(commit_meter_obis, last_index))
 
 def prep_data(meter_no, pass_lvl, random_no, passw, data, logger: Logger):
     if not isinstance(random_no, bytes):

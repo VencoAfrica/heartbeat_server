@@ -58,7 +58,7 @@ class AddMeterRequestPayload:
 
     def __init__(self, data: bytearray):
         self._data = data
-        self._request = json.loads(self._data.data.decode('utf-8'))
+        self._request = json.loads(self._data.decode('utf-8'))
         self.validate()
         self.populate()
         
@@ -168,7 +168,7 @@ class RemoteRequestPayload:
 
     def __init__(self, data: bytearray):
         self._data = data
-        self._request = json.loads(self._data.data.decode('utf-8'))
+        self._request = json.loads(self._data.decode('utf-8'))
         self.validate()
         self.populate()
 
@@ -245,12 +245,19 @@ def inspect_http_content_type(body):
     if 'command' not in request and 'meters' not in request:
         raise Exception('Invalid request')
 
+def get_request_path(url):
+    parsed_url = urlparse(url)
+    path = parsed_url.path
+    resource = path.split('/')[-1]
+    return resource
+
 async def process_http_request(request: HTTPRequest,
                                reader: StreamReader,
                                auth_token: str,
                                redis_params: dict,
                                db_params:dict,
-                               writer: StreamWriter):
+                               writer: StreamWriter,
+                               logger: Logger):
     conn = h11.Connection(h11.SERVER)
     conn.receive_data(request.data)
     while True:
@@ -259,15 +266,17 @@ async def process_http_request(request: HTTPRequest,
             conn.receive_data(await reader.read(255))
         elif isinstance(event, Request):
             method = event.method.decode('utf-8')
+            request_url = event.target.decode('utf-8')
             if method == 'POST':
                 token = extract('Authorization', event.headers)
                 authenticate(token, auth_token)
                 body = conn.next_event()
                 content_type = inspect_http_content_type(body)
+                request_path = get_request_path(request_url)
                 if content_type == 'remote':
-                    await queue(body, redis_params, writer)
-                elif content_type == 'ccu':
-                    await add_meter_queue(body, redis_params, writer, db_params, auth_token)
+                    await queue(body.data, redis_params, writer)
+                elif request_path == 'ccu_add_meter':
+                    await add_meter_queue(body.data, redis_params, writer, db_params, auth_token, logger)
             else:
                 raise Exception('Unsupported HTTP method')
 
@@ -284,50 +293,21 @@ def authenticate(token, auth_token):
     if token.split('Bearer')[1].strip() != auth_token:
         raise Exception('Invalid auth token')
 
-async def meter_add_callback(callback_url):
-    while True:
-      # Wait for the callback request
-        response = await asyncio.get_event_loop().run_in_executor(None, requests.get, callback_url)
-        logger.info(f'Meter add callback response {response}')
-        if response.status == 200:
-            # Extract the necessary information from the response
-            data = response.json()
-            message = data.get("message")
-            return str(message)
-        else:
-            raise Exception(response.text)
-
-async def add_meter_step(ccu, meters: list, last_index, callback_url, auth_token):
-    url = "http://18.117.213.18:18901"
-    next_index = str(int(last_index) + 1)
-    for meter in meters:
-        payload = {
-            "action": "write",
-            "meter": ccu,
-            "command": "Add Meter",
-            "code": f'96.51.91.{next_index}',
-            "value": f'0255{meter}',
-            "callback_url": callback_url
-        }
-        response = requests.post(url, 
-                             data=json.dump(payload, indent=None, default=str), 
-                             headers={'Authorization': f'token {auth_token}',
-                                      'Content-type': 'application/json'})
-        second_callback = await meter_add_callback(callback_url)
-
 async def process_add_meter_command(ccu_no, meters,
                                     callback_url,
-                                    db_params, redis_params):
-    # Step 1: Read the last meter index
+                                    db_params, redis_params, logger):
     for meter in meters:
-        remote_meter_add = {
+        remote_meter_add_payload = {
             "action": "read",
             "meter": '{}-{}'.format(ccu_no, meter),
             "command": "Add Meter",
-            "code": "<OBIS CODE for Add Meter>",
+            "code": "96.51.90.255",
             "callback_url": callback_url if callback_url else ''
         }
-        payload = RemoteRequestPayload(remote_meter_add) # convert json payload to bytearray
+        payload = json.dumps(remote_meter_add_payload)
+        remote_meter_add = bytearray(payload, 'utf-8')
+        logger.info(remote_meter_add)
+        payload = RemoteRequestPayload(remote_meter_add)
         redis_command_id = redis_write(payload, redis_params)
         logger.info(f"process_add_meter queued {redis_command_id}")
 
@@ -340,51 +320,21 @@ async def queue(data: bytearray, redis_params: dict,
 
 async def add_meter_queue(data: bytearray, redis_params: dict,
                           writer: StreamWriter, db_params: dict,
-                          auth_token:str):
+                          auth_token:str, logger):
+    request_id = str(uuid4())                    
     try:
         remote_add = AddMeterRequestPayload(data)
-        request_id = str(uuid4())
         message = f'Scheduled meter addition for {remote_add.ccu}'
         await send_response(writer, request_id, 200, message)
         await process_add_meter_command(remote_add.ccu,
                                         remote_add.meters,
                                         remote_add.callback_url,
-                                        db_params, redis_params)
-        # heartbeat_name = db_params.get('name')
-        # heartbeat_db = Db(heartbeat_name)
-        # heartbeat_db.add(remote_add.ccu, remote_add.meters)
+                                        db_params, redis_params, logger)
     except Exception as e:
         await send_response(writer, request_id, 500, str(e))
-        logger.log(e)
+        logger.info(e)
 
-# # add meter to redis
-# def addmeter_redis_write(request, redis_params):
-#     r = redis.Redis(host=redis_params.get('host', '0.0.0.0'),
-#                     port=redis_params.get('port', 6379),
-#                     db=redis_params.get('db', 0))
-#     value = None
-#     curr_timestamp = (round(time.time() * 1000))
-#     if isinstance(request, RemoteRequestPayload):
-#         value = {
-#             'action': request.action,
-#             'meter': request.meter,
-#             'command': request.command,
-#             'code': request.code,
-#             'value': request.value,
-#             'callback_url': request.callback_url,
-#             'timestamp': curr_timestamp
-#         }
-#     elif isinstance(request, AddMeterRequestPayload):
-#         value = {
-#             'ccu': request.ccu,
-#             'meters': request.meters,
-#             'callback_url': request.callback_url,
-#             'timestamp': curr_timestamp
-#         }
-#     if value:
-#         r.set(f'*|{curr_timestamp}', json.dumps(value))
 
-#     return curr_timestamp
 def redis_write(remote_request: RemoteRequestPayload,
                 redis_params: dict) -> int:
     _d = '*|'

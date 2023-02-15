@@ -4,11 +4,12 @@ import requests
 from asyncio.streams import StreamReader, StreamWriter
 from logging import Logger
 from datetime import datetime
-
+from .db import Db
 from .heartbeat import read_heartbeat
 from .hes import generate_ccu_cmd, \
     generate_last_meter_index_cmd, \
-    generate_add_meter_cmd
+    generate_add_meter_cmd, \
+    generate_commit_meter_cmd
 
 from .meter_device import get_reading_cmds
 from .meter_reading import MeterReading
@@ -30,9 +31,9 @@ async def ccu_handler(reader: StreamReader,
     if isinstance(heartbeat, HTTPRequest):
         try:
             await process_http_request(heartbeat, reader, auth_token,
-                                   redis_params, db_params, writer)
+                                   redis_params, db_params, writer, logger)
         except Exception as e:
-            await send_response(writer, 0, 400, str(e))
+            await send_response(writer, 0, 400, str(e), logger)
         finally:
             writer.close()
     else:
@@ -41,51 +42,53 @@ async def ccu_handler(reader: StreamReader,
                                                            .format(x) for x in reply_resp))
 
         ccu_no = heartbeat.device_details.decode()
-
         if ccu_no:
             logger.info(f'Preparing to read meters for {ccu_no}')
             remote_commands = get_reading_cmds(ccu_no, db_params ,redis_params, logger)
             read_cmds = remote_commands[0]
             readings = []
-            add_meter_readings = []
 
             for add_meter_command in remote_commands[1]:
                 # processing only add meter commands
-                meter, cmd, obis_code, callback_url, request_id = add_meter_command
+                meter_no, cmd, obis_code, callback_url, request_id = add_meter_command
+                ccu_no, meter = meter_no.split("-")
                 read = {}
                 logger.info(f'Reading {meter} {obis_code} ' + \
                             ''.join('{:02x}'
                                     .format(x) for x in obis_code))
-                # generated_reading_cmd = await generate_reading_cmd(meter, obis_code, logger)
                 logger.info('Reading cmd: ' + ''.join('{:02x}'
                                                       .format(x) for x in generated_reading_cmd))
 
                 try:
-                    # Step 1: read the last meter index using the read last meter index OBIS
-                    # generate the read last meter command from OBIS
                     generated_reading_cmd = generate_last_meter_index_cmd(ccu_no, logger)
                     reading = await get_ccu_command_result(generated_reading_cmd,
-                                                           meter,
+                                                           ccu_no,
                                                            reader, writer,
                                                            logger)
                     if reading:
-                        logger.info(f'Got reading for {meter}: {reading}')
+                        logger.info(f'Got last meter index for {ccu_no}: {reading}')
                         last_index = reading
-
-                        # Step 2: Build the add meter command
-                        #   W110.0.0.0(0255<meter_no><index+1>) - meter_device.py.write_value()
-                        add_meter_command = generate_add_meter_cmd(meter, last_index, logger)
+                        add_meter_command = generate_add_meter_cmd(ccu_no, meter, last_index, logger)
                         data = await get_ccu_command_result(add_meter_command,
-                                                           meter,
+                                                           ccu_no,
                                                            reader, writer,
                                                            logger)
-
+                        if data:
+                            logger.info(f'Added meter {meter} for {ccu_no}: {data}')
+                            commit_meter_command = generate_commit_meter_cmd(ccu_no, last_index, logger)
+                            commit_data = await get_ccu_command_result(commit_meter_command,
+                                                                        ccu_no,
+                                                                        reader, writer,
+                                                                        logger)
+                            if commit_data:
+                                logger.info(f'Commited {meter} index for {ccu_no}: {reading}')
+                                heartbeat_name = db_params.get('name')
+                                heartbeat_db = Db(heartbeat_name)
+                                heartbeat_db.add(ccu_no, meter)
+                    send_response(200, commit_data, meter, request_id, logger, callback_url)
                 except Exception as e:
-                    logger.info(f'Error obtaining reading for {meter}')                      
-
-                # Step 3: Execute the add meter command on the CCU
-                # Step 4: Add the meter to the sqlite db and map to the CCU
-                # Step 5: Send the add meter callback
+                    send_response(500, str(e), meter, request_id, logger, callback_url)
+                    logger.info(f'Error obtaining adding meter {meter} to ccu {ccu_no}')                      
 
             for read_cmd in read_cmds:
                 meter, cmd, obis_code, callback_url, request_id = read_cmd
@@ -110,29 +113,12 @@ async def ccu_handler(reader: StreamReader,
                         read['reading'] = reading
                         read['timestamp'] = curr_timestamp
                         readings.append(read)
-
-                        if callback_url:
-                            data = {
-                                'status': 200,
-                                'message': reading,
-                                'meter_no': meter,
-                                'request_id': request_id,
-                                'timestamp':  curr_timestamp
-                            }
-                            send_callback(data, callback_url, logger)
-
+                        send_response(200, reading, meter, request_id, logger, callback_url)
+            
                 except Exception as e:
+                    send_response(500, str(e), meter, request_id, logger, callback_url)
                     logger.info(f'Error obtaining reading for {meter}')
-                    if callback_url:
-                        data = {
-                            'status': 500,
-                            'message': str(e),
-                            'meter_no': meter,
-                            'request_id': request_id,
-                            'timestamp': datetime.now().isoformat()
-                        }
-                        send_callback(data, callback_url, logger)
-
+        
             logger.info('Preparing to send readings')
             await send_readings(logger,
                                 hes_server_url,
@@ -147,6 +133,17 @@ async def ccu_handler(reader: StreamReader,
             logger.info(f'CCU not found in heartbeat {heartbeat}')
 
         writer.close()
+
+def send_response(status, message, meter_no, request_id, logger, callback_url=None):
+    if callback_url:
+        data = {
+            'status': status,
+            'message': message,
+            'meter_no': meter_no,
+            'request_id': request_id,
+            'timestamp':  datetime.now().isoformat()
+        }
+        send_callback(data, callback_url, logger)
 
 
 async def get_ccu_command_result(reading_cmd,
