@@ -1,0 +1,7 @@
+*.pyc
+*.egg-info/
+__pycache__/
+logs/
+supervisor.conf
+config.json
+.idea/
