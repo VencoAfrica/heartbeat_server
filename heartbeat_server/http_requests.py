@@ -254,7 +254,10 @@ async def process_http_request(request: HTTPRequest,
     while True:
         event = conn.next_event()
         if event is h11.NEED_DATA:
-            conn.receive_data(await reader.read(255))
+            data = await reader.read(255)
+            if not data:
+                break  # No more data available, exit the loop
+            conn.receive_data(data)
         elif isinstance(event, Request):
             method = event.method.decode('utf-8')
             if method == 'POST':
@@ -262,10 +265,11 @@ async def process_http_request(request: HTTPRequest,
                 authenticate(token, auth_token)
                 body = conn.next_event()
                 content_type = inspect_http_content_type(body)
-                if content_type == 'remote':
+                if content_type == 'remote':    
                     await queue(body, redis_params, writer)
                 elif content_type == 'ccu':
                     await add_meter_queue(body, redis_params, writer, db_params)
+                break
             else:
                 raise Exception('Unsupported HTTP method')
 
@@ -285,21 +289,24 @@ def authenticate(token, auth_token):
 async def queue(data: bytearray, redis_params: dict,
           writer: StreamWriter):
     remote_request = RemoteRequestPayload(data)
-    request_id = redis_write(remote_request, redis_params)
+    request_id = await redis_write(remote_request, redis_params)
     message = f'Scheduled {remote_request.action} for {remote_request.meter}'
     await send_response(writer, request_id, 200, message)
 
 async def add_meter_queue(data: bytearray, redis_params: dict, writer: StreamWriter, db_params: dict):
-    remote_add = AddMeterRequestPayload(data)
-    heartbeat_name = db_params.get('name')
-    heartbeat_db = Db(heartbeat_name)
-    heartbeat_db.add(remote_add.ccu, remote_add.meters)
-    request_id = addmeter_redis_write(remote_add, redis_params)
-    message = f'Meter added for {remote_add.ccu}'
-    await send_response(writer, request_id, 200, message)
+    try:
+        remote_add = AddMeterRequestPayload(data)
+        heartbeat_name = db_params.get('name')
+        heartbeat_db = Db(heartbeat_name)
+        heartbeat_db.add(remote_add.ccu, remote_add.meters)
+        request_id = await addmeter_redis_write(remote_add, redis_params)
+        message = f'Meter added for {remote_add.ccu}'
+        await send_response(writer, request_id, 200, message)
+    finally:
+        heartbeat_db.close()
 
 # add meter to redis
-def addmeter_redis_write(request, redis_params):
+async def addmeter_redis_write(request, redis_params):
     r = redis.Redis(host=redis_params.get('host', '0.0.0.0'),
                     port=redis_params.get('port', 6379),
                     db=redis_params.get('db', 0))
@@ -326,7 +333,7 @@ def addmeter_redis_write(request, redis_params):
         r.set(f'*|{curr_timestamp}', json.dumps(value))
 
     return curr_timestamp
-def redis_write(remote_request: RemoteRequestPayload,
+async def redis_write(remote_request: RemoteRequestPayload,
                 redis_params: dict) -> int:
     _d = '*|'
     r = redis.Redis(host=redis_params.get('host', '0.0.0.0'),
@@ -357,8 +364,11 @@ def send_callback(data: dict,
                   callback_url: str,
                   logger: Logger):
     meter_no = data['meter_no']
-    logger.info(f'Sending callback for {meter_no} to {callback_url}')
-    resp = requests.post(url=callback_url, data=json.dumps(data))
+    data['callback_url'] = callback_url
+    headers = {'Content-Type': 'application/json'}
+    logger.info(f'Sending callback data {json.dumps(data)} for {meter_no} to {callback_url}')
+    kwargs = {'data': json.dumps(data)}
+    resp = requests.post(url=callback_url, headers=headers, **kwargs)
     logger.info(f'Callback result: status_code {resp.status_code} reason {resp.reason}')
 
 

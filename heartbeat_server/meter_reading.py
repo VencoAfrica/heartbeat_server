@@ -20,11 +20,11 @@ class MeterReading:
         resp = self.prep_response(self._data, meter_no)
         try:
             answer = AnswerDataMessage.from_bytes(resp)
-            logger.info('XReading answer type >')
-            logger.info(type(answer))
-            logger.info(answer.data)
-            logger.info(resp.hex())
-            logger.info('XReading answer type <')
+            #logger.info('XReading answer type >')
+            #logger.info(type(answer))
+            #logger.info(answer.data)
+            #logger.info(resp.hex())
+            #logger.info('XReading answer type <')
             result = ''
             # answer_str = answer.decode('utf-8')
             # logger.info(f'IEC21 return data {answer_str}')
@@ -34,9 +34,16 @@ class MeterReading:
                     result += data.value + ' '
                 else:
                     result += '()'
-            logger.info(f'Result {result}')
+            # logger.info(f'Result {result}')
+            # logger.info(f'Succeeded to parse response:_data {self._data}')
+            # logger.info(f'Succeeded to parse response:resp {resp}')
+            # logger.info(f'Succeeded to parse response:result {result}')
             return result
-        except:
+        except Exception as e:
+            logger.info(f'Raw meter number :{meter_no}')
+            # logger.exception(f'Failed to parse response: {str(e)}')
+            logger.info(f'Failed to parse response:_data {self._data}')
+            logger.info(f'Failed to parse response:resp {resp}')
             return resp.hex()
 
     def prep_response(self, response, meter_no):

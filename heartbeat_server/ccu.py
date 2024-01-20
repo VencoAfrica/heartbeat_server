@@ -22,6 +22,7 @@ async def ccu_handler(reader: StreamReader,
                       auth_token: str,
                       logger: Logger):
     heartbeat = await read_heartbeat(reader, logger)
+    await register_ccu(heartbeat)
     if logger:
         logger.info(f'\nccu.ccu_handler(): Received heartbeat {heartbeat}')
 
@@ -29,6 +30,7 @@ async def ccu_handler(reader: StreamReader,
         try:
             await process_http_request(heartbeat, reader, auth_token,
                                    redis_params, db_params, writer)
+            await send_response(writer, 0, 200, "request successful")
         except Exception as e:
             await send_response(writer, 0, 400, str(e))
         finally:
@@ -41,19 +43,19 @@ async def ccu_handler(reader: StreamReader,
         ccu_no = heartbeat.device_details.decode()
 
         if ccu_no:
-            logger.info(f'Preparing to read meters for {ccu_no}')
+            #logger.info(f'Preparing to read meters for {ccu_no}')
             read_cmds = get_reading_cmds(ccu_no, db_params ,redis_params, logger)
             readings = []
 
             for read_cmd in read_cmds:
                 meter, cmd, obis_code, callback_url, request_id = read_cmd
                 read = {}
-                logger.info(f'Reading {meter} {obis_code} ' + \
-                            ''.join('{:02x}'
-                                    .format(x) for x in obis_code))
+                #logger.info(f'Reading {meter} {obis_code} ' + \
+                #            ''.join('{:02x}'
+                #                    .format(x) for x in obis_code))
                 generated_reading_cmd = await generate_reading_cmd(meter, obis_code, logger)
-                logger.info('Reading cmd: ' + ''.join('{:02x}'
-                                                      .format(x) for x in generated_reading_cmd))
+                #logger.info(f'Reading cmd: {callback_url}' + ''.join('{:02x}'
+                #                                      .format(x) for x in generated_reading_cmd))
 
                 try:
                     reading = await get_reading(generated_reading_cmd,
@@ -61,7 +63,7 @@ async def ccu_handler(reader: StreamReader,
                                                 reader, writer,
                                                 logger)
                     if reading:
-                        logger.info(f'Got reading for {meter}: {reading}')
+                        #logger.info(f'Got reading for {meter}: {reading}')
                         curr_timestamp = datetime.now().isoformat()
                         read['meter_no'] = meter
                         read['type'] = cmd
@@ -119,11 +121,11 @@ async def get_reading(reading_cmd,
             if logger is not None:
                 logger.info("Attempt: %s", tries + 1)
             writer.write(reading_cmd)
-            response = await reader.read(100)
-            logger.info(f'\nResponse {response} ' + ''.join('{:02x}'
+            response = await reader.read(200)
+            logger.info(f'\nXResponse {meter_no} {response} ' + ''.join('{:02x}'
                                             .format(x) for x in response))
             meter_reading = MeterReading(response, logger)
-            logger.info(f'\nMeter Reading {meter_reading}')
+            #logger.info(f'\nMeter Reading {meter_reading}')
             return meter_reading.get_value_from_response(meter_no, logger)
         except Exception as e:
             msg = f'Unable to get reading for {meter_no} Exception: {str(e)}'
@@ -155,12 +157,23 @@ async def send_readings(logger, hes_server_url, readings: dict, auth_token):
     res = json.dumps(readings, indent=None, default=str)
     logger.info(f'Sending requests to {hes_server_url}')
     logger.info(f'Sending data {res}')
-    resp = requests.post(hes_server_url,
-                         data=json.dumps(readings, indent=None, default=str),
-                         headers={'Authorization': f'token {auth_token}',
-                                  'Content-type': 'application/json'})
+    resp = requests.post('https://meterservices.venco.africa/api/method/meter_services.v1.log_readings',
+        data=json.dumps(readings, indent=None, default=str),
+        headers={'Authorization': f'token c0d9a22d1b344da:7490dd75996ede3',
+        'Content-type': 'application/json'})
+    # resp = requests.post(hes_server_url,
+    #                      data=json.dumps(readings, indent=None, default=str),
+    #                      headers={'Authorization': f'token {auth_token}',
+    #                               'Content-type': 'application/json'})
     logger.info(f'Send readings response {resp.text}')
     if resp.status_code != 200:
         raise Exception(resp.text)
 
-
+async def register_ccu(heartbeat):
+    try:
+        ccu_no = heartbeat.device_details
+        resp = requests.post('https://meterservices.venco.africa/api/method/meter_services.v1.add_ccu',
+            data=json.dumps({'ccu_no': ccu_no.decode()}, indent=None, default=str),
+            headers={'Authorization': f'token c0d9a22d1b344da:7490dd75996ede3','Content-type': 'application/json'})
+    except:
+        pass

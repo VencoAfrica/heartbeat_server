@@ -28,13 +28,17 @@ class Db:
         if not re.match(r'^MTRK[0-9]{12}$', ccu):
             raise Exception(f'Invalid ccu: {ccu}')
         self._db.execute('CREATE TABLE IF NOT EXISTS ccu (id INTEGER PRIMARY KEY, ccu VARCHAR UNIQUE, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
-        self._db.execute('INSERT OR IGNORE INTO ccu (ccu) VALUES (?)', (ccu,))
-        return self._db.execute('SELECT id FROM ccu WHERE ccu = ?', (ccu,)).fetchone()[0]
+        try:
+            self._db.execute('INSERT INTO ccu (ccu) VALUES (?)', (ccu,))
+            ccu_id = self._db.execute('SELECT id FROM ccu WHERE ccu = ?', (ccu,)).fetchone()[0]
+        except sqlite3.IntegrityError:
+            ccu_id = self._db.execute('SELECT id FROM ccu WHERE ccu = ?', (ccu,)).fetchone()[0]
+        return ccu_id
     
     def add_meters(self, ccu_id: int, meters: list):
         self._db.execute('CREATE TABLE IF NOT EXISTS meters (id INTEGER PRIMARY KEY, meter VARCHAR UNIQUE, ccu_id INTEGER REFERENCES ccus(id), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
         for meter in meters:
-            if not re.match(r'^[0-9]{12}$', meter):
+            if not re.match(r'^[A-Za-z]*[0-9]{12}$', meter):
                 raise Exception(f'Invalid meter: {meter}')
             self._db.execute('INSERT OR IGNORE INTO meters (meter, ccu_id) VALUES (?, ?)', (meter, ccu_id))
 

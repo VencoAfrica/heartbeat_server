@@ -30,8 +30,8 @@ def get_reading_cmds(ccu_no, db_params, redis_params, logger: Logger):
         for cmd, obis_code in obis_codes.items()
         for meter in meters
     ]
-    commands = read_commands + get_remote_request_commands(redis_params, meters, logger)
-    logger.info(f'Generated commands {commands}')
+    commands = read_commands# + get_remote_request_commands(redis_params, meters, logger)
+    #logger.info(f'Generated commands {commands}')
     return commands
 
 
@@ -71,6 +71,7 @@ def get_remote_request_commands(redis_params, meters:list, logger: Logger):
             if str(key, 'utf-8') \
                     .startswith(REMOTE_REQUEST_DELIMITER):
                 command = str(r.get(key), 'utf-8').split(REMOTE_REQUEST_DELIMITER)
+                #logger.info(f'XMeter Commands {command}')
                 mode = command[0]
                 meter_no = command[1]
                 logical_command = command[2]
