@@ -5,3 +5,4 @@ logs/
 supervisor.conf
 config.json
 .idea/
+heartbeat.db

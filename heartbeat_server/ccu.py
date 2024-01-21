@@ -144,7 +144,7 @@ async def send_readings(logger, hes_server_url, readings: dict, auth_token):
           "ccu_no":"MTRK017900013203",
           "readings":[
              {
-                 "meter: "017900013203",
+                 "meter_no: "017900013203",
                  "type: "phase A voltage",
                  "reading" : "00229.5*V",
                  "timestamp" :"2022-5-27 9:34:49.886451"
@@ -157,17 +157,47 @@ async def send_readings(logger, hes_server_url, readings: dict, auth_token):
     res = json.dumps(readings, indent=None, default=str)
     logger.info(f'Sending requests to {hes_server_url}')
     logger.info(f'Sending data {res}')
+    log_readings(readings.get('data'), logger)
     resp = requests.post('https://meterservices.venco.africa/api/method/meter_services.v1.log_readings',
         data=json.dumps(readings, indent=None, default=str),
         headers={'Authorization': f'token c0d9a22d1b344da:7490dd75996ede3',
         'Content-type': 'application/json'})
-    # resp = requests.post(hes_server_url,
-    #                      data=json.dumps(readings, indent=None, default=str),
-    #                      headers={'Authorization': f'token {auth_token}',
-    #                               'Content-type': 'application/json'})
     logger.info(f'Send readings response {resp.text}')
     if resp.status_code != 200:
         raise Exception(resp.text)
+    
+def log_readings(data, logger):
+    from .mongodb import MongoDb
+    try:
+        heartbeat_db = MongoDb('heartbeat')
+        readings = []
+        today = datetime.today()
+        ccu_no = data['ccu_no']
+        _readings = data['readings']
+        _meter_numbers = []
+        _reading_types = []
+        for i in _readings:
+            meter_number = i.get('meter_no')
+            reading_type = i.get('type')
+            reading = i.get('reading')
+            timestamp = i.get('timestamp')
+            readings.append({
+                'meter_number': meter_number,
+                'ccu': ccu_no,
+                'type': reading_type,
+                'reading': reading,
+                'timestamp': datetime.strptime(timestamp,'%Y-%m-%d %H:%M:%S.%f')
+            })
+
+        heartbeat_db.delete_meter_readings({
+            'meter_number':  {"$in": list(set(_meter_numbers))},
+            'ccu': ccu_no,
+            'type': list(set(_reading_types)),
+            'timestamp': {'$gte', today}
+        })
+        heartbeat_db.add_meter_readings(readings)
+    except:
+        logger.exception("MongoDB:Log Readings Error")
 
 async def register_ccu(heartbeat):
     try:
